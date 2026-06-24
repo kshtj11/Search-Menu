@@ -26,6 +26,9 @@
   *{box-sizing:border-box;margin:0;padding:0;}
   html,body{height:100%;}
   body{
+
+  -ms-overflow-style: none;
+  scrollbar-width: none;
     background:#0a0a0a;
     font-family:'Sora',system-ui,sans-serif;
     color:var(--txt);
@@ -38,6 +41,9 @@
     padding:24px;
   }
 
+  body::-webkit-scrollbar {
+  display: none;
+}
   /* ---------- device frame (square, no stroke) ---------- */
   .phone{
     width:540px;
