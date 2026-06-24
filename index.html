@@ -103,22 +103,23 @@
   }
   .results::-webkit-scrollbar{width:0;}
 
-  /* pinned (empty state) */
-  .pinned-wrap{padding:18px 14px 4px;flex:1 1 auto;}
+  /* pinned (empty state) — 64px tiles, left-aligned to the 30px gutter,
+     same tile size + start + gap as the search app row so they read as one grid */
+  .pinned-wrap{padding:18px 30px 4px;flex:1 1 auto;}
   .pinned-label{font-size:10px;letter-spacing:2px;color:var(--txt-faint);margin-bottom:12px;}
-  .pinned-row{display:flex;gap:14px;}
+  .pinned-row{display:flex;gap:52px;}
   .pin{
-    flex:1;display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer;
+    flex:0 0 64px;min-width:0;display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer;
   }
   .pin .tile{
-    width:100%;aspect-ratio:1;max-width:78px;border-radius:var(--r);background:var(--l1);
+    width:64px;height:64px;border-radius:var(--r);background:var(--l1);
     display:flex;align-items:center;justify-content:center;
     font-size:9px;color:var(--txt-dim);text-transform:lowercase;transition:transform .12s,box-shadow .12s;
   }
   /* selection sits 2px outside the tile (2px invisible gap, then ring) */
   .pin.sel .tile{box-shadow:0 0 0 2px var(--bg),0 0 0 3px var(--sel-ring);}
   .pin:active .tile{transform:scale(.94);}
-  .pin .plabel{font-size:16px;color:#ffffff;}
+  .pin .plabel{font-size:16px;color:#ffffff;white-space:nowrap;}
 
   /* result row — icon sits on the 30px gutter (no extra left padding) */
   .row{
@@ -165,16 +166,18 @@
 
   /* tile row (app matches + search routes) — horizontally swipeable, aligned to gutter.
      4px padding + -4px margin gives the selection ring room without breaking alignment. */
+  /* search app row — 64px tiles, gap 52, starts at the 30px gutter (via results
+     padding), scrolls horizontally showing ~4.25 tiles as a "more" cue */
   .tilerow{
-    display:flex;flex-wrap:nowrap;align-items:flex-start;gap:14px;
-    flex:0 0 auto;height:118px;            /* definite height: scroll container needs it */
-    padding:4px;margin:0 -4px;
+    display:flex;flex-wrap:nowrap;align-items:flex-start;gap:52px;
+    flex:0 0 auto;height:100px;            /* definite height: scroll container needs it */
+    padding:4px 0;
     overflow-x:auto;overflow-y:hidden;
     touch-action:pan-x;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;
   }
-  .gtile{display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer;width:78px;flex:0 0 78px;}
+  .gtile{display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer;width:64px;flex:0 0 64px;}
   .gtile .gbox{
-    width:78px;height:78px;flex:0 0 78px;border-radius:var(--r);background:var(--l1);
+    width:64px;height:64px;flex:0 0 64px;border-radius:var(--r);background:var(--l1);
     display:flex;align-items:center;justify-content:center;font-size:9px;text-transform:lowercase;
     transition:transform .12s,box-shadow .12s;
   }
@@ -268,13 +271,40 @@
   }
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
 
+  /* ---------- home / dock / search-surface layers ---------- */
+  #homeLayer{
+    position:absolute;inset:0;z-index:1;
+    background:#5b6cc4 url('home.png') center/cover no-repeat;
+    touch-action:none;cursor:grab;
+  }
+  #dockLayer{
+    position:absolute;left:0;right:0;bottom:0;height:86px;z-index:2;
+    background:#000 url('Dock.png') center/contain no-repeat;
+    transform:translateY(100%);
+  }
+  #searchSurface{
+    position:absolute;inset:0;z-index:3;
+    display:flex;flex-direction:column;background:var(--bg);
+    transform:translateY(100%);
+  }
+  /* smooth snap when not actively dragging */
+  #phone:not(.dragging) #dockLayer,
+  #phone:not(.dragging) #searchSurface{transition:transform .28s cubic-bezier(.22,.61,.36,1);}
+
   .side{display:flex;flex-direction:column;align-items:center;}
 </style>
 </head>
 <body>
   <div class="side">
     <div class="phone" id="phone">
-      <div class="topbar">
+      <!-- base home screen -->
+      <div id="homeLayer"></div>
+      <!-- navigation dock (revealed on swipe up) -->
+      <div id="dockLayer"></div>
+
+      <!-- the search surface — slides up from the bottom over home -->
+      <div id="searchSurface">
+      <div class="topbar" id="topbar">
         <div class="toggle" id="kbToggle" title="Toggle on-screen / connected keyboard">
           <span class="knob"></span>
           <span class="lbl" id="kbToggleLbl">On-screen KB</span>
@@ -317,6 +347,7 @@
       </div>
 
       <div class="toast" id="toast"></div>
+      </div><!-- /searchSurface -->
     </div>
   </div>
 
@@ -327,6 +358,17 @@
 const ACCENTS = {
   terminal:'#ff9d4d', files:'#5ec8a0', settings:'#7aa2ff',
   modules:'#c08cff', audio:'#ff6f9c', camera:'#ffd24d', calc:'#9bd0ff',
+};
+
+// app-icon images by app id (folder name has a space → URL-encode it).
+// apps not listed here fall back to the 3-letter text tile.
+const ICONS = {
+  camera:'app%20icons/camera.png',
+  terminal:'app%20icons/Terminal.png',
+  files:'app%20icons/Files.png',
+  settings:'app%20icons/Settings.png',
+  audio:'app%20icons/music.png',
+  notes:'app%20icons/notes.png',
 };
 
 // §6 system codes
@@ -354,14 +396,15 @@ const APPS = [
   { id:'audio',    label:'Audio',    accent:ACCENTS.audio,    sub:'sound · code snd' },
   { id:'maps',     label:'Maps',     accent:'#86d07a',        sub:'navigation' },
   { id:'camera2',  label:'Camera Roll',accent:ACCENTS.camera, sub:'gallery' },
+  { id:'notes',    label:'Notes',    accent:'#dfe4ea',        sub:'jot · markdown' },
 ];
 
 // in-app actions / widgets (§4.4)  "App › sub-feature"
 const ACTIONS = [
-  { id:'set-wifi', app:'Settings', accent:ACCENTS.settings, label:'Settings › wifi',     icon:'set' },
-  { id:'set-bri',  app:'Settings', accent:ACCENTS.settings, label:'Settings › brightness',icon:'set' },
-  { id:'cam-vid',  app:'Camera',   accent:ACCENTS.camera,   label:'Camera › video',      icon:'cam' },
-  { id:'snd-vol',  app:'Audio',    accent:ACCENTS.audio,    label:'Audio › volume',      icon:'snd' },
+  { id:'set-wifi', app:'Settings', appId:'settings', accent:ACCENTS.settings, label:'Settings › wifi',      icon:'set' },
+  { id:'set-bri',  app:'Settings', appId:'settings', accent:ACCENTS.settings, label:'Settings › brightness',icon:'set' },
+  { id:'cam-vid',  app:'Camera',   appId:'camera',   accent:ACCENTS.camera,   label:'Camera › video',       icon:'cam' },
+  { id:'snd-vol',  app:'Audio',    appId:'audio',    accent:ACCENTS.audio,    label:'Audio › volume',       icon:'snd' },
 ];
 
 // §Config — pinned apps (4); #1 is implicit Enter target on empty
@@ -464,7 +507,7 @@ function resolve(p){
     const c = CODES[p.code];
     // scoped command mode — primary row = run-in-app
     out.push({
-      type:'code', icon:p.code, accent:c.accent,
+      type:'code', icon:p.code, iconImg:ICONS[c.appId], accent:c.accent,
       title:c.app+(p.query?' · '+p.query:' (scoped)'),
       sub:p.query? 'run: '+p.code+' '+p.query : 'type args, Enter to run',
       action:()=>runCode(p.code, p.query),
@@ -482,7 +525,7 @@ function resolve(p){
   ranked.forEach(x=>out.push(appResult(x.a)));
 
   ACTIONS.filter(ac=>fuzzy(q, ac.label)>0)
-         .forEach(ac=>out.push({ type:'action', icon:ac.icon, accent:ac.accent,
+         .forEach(ac=>out.push({ type:'action', icon:ac.icon, iconImg:ICONS[ac.appId], accent:ac.accent,
             title:ac.label, action:()=>toast('Open '+ac.label) }));
 
   // general-search routes — Search (web) + Files, rendered as side-by-side tiles
@@ -493,7 +536,7 @@ function resolve(p){
 
 function appResult(a){
   if(!a) return null;
-  return { type:'app', icon:a.id.slice(0,3), accent:a.accent, title:a.label,
+  return { type:'app', icon:a.id.slice(0,3), iconImg:ICONS[a.id], accent:a.accent, title:a.label,
            action:()=>launchApp(a.id, a.label) };
 }
 
@@ -502,7 +545,7 @@ function routeResults(q){
   return [
     { type:'web',        icon:'⌕',   accent:'#cfd6e6', title:'Search',
       action:()=>toast('Searching web: '+q) },
-    { type:'filesroute', icon:'fil', accent:ACCENTS.files, title:'Files',
+    { type:'filesroute', icon:'fil', iconImg:ICONS.files, accent:ACCENTS.files, title:'Files',
       action:()=>openFiles(q) },
   ];
 }
@@ -632,11 +675,12 @@ function renderSearchIcon(p){
   if(p.mode==='code'){                 // only show the icon once an app/code is scoped
     ic.style.display='flex';
     ic.className='sicon app';
-    ic.style.background=state.tokenCode.accent;
-    ic.textContent=p.code;
+    const img=ICONS[state.tokenCode.appId];
+    if(img){ ic.style.background='transparent'; setIcon(ic, img, p.code, '#fff'); }
+    else { ic.style.background=state.tokenCode.accent; ic.textContent=p.code; }
   }else{
     ic.style.display='none';           // blank / plain search: no leading icon
-    ic.textContent='';
+    ic.innerHTML='';
   }
 }
 
@@ -714,13 +758,24 @@ function renderBody(p){
   }
 }
 
+// fill an icon box with the app-icon image, or fall back to text
+function setIcon(box, imgPath, text, accent){
+  box.innerHTML=''; box.style.color=accent||'var(--txt-dim)';
+  if(imgPath){
+    box.style.overflow='hidden'; box.style.background='transparent';
+    const img=document.createElement('img'); img.src=imgPath; img.alt='';
+    img.style.cssText='width:100%;height:100%;object-fit:cover;display:block;border-radius:inherit;';
+    box.appendChild(img);
+  } else { box.textContent=text; }
+}
+
 // simple list card — icon + name only (no subtext)
 function mkCard(r,i,isAnswer){
   const row=document.createElement('div');
   row.className='row'+(isAnswer?' answer':'')+(i===state.selectedIndex?' sel':'');
   row.onclick=()=>{ state.selectedIndex=i; update(); r.action&&r.action(); };
   const ic=document.createElement('div'); ic.className='ricon';
-  ic.textContent=r.icon; ic.style.color=r.accent||'var(--txt-dim)';
+  setIcon(ic, r.iconImg, r.icon, r.accent);
   row.appendChild(ic);
   const body=document.createElement('div'); body.className='rbody';
   const t=document.createElement('div'); t.className='rtitle'; t.textContent=r.title;
@@ -734,7 +789,7 @@ function mkTile(r,i){
   el.className='gtile'+(i===state.selectedIndex?' sel':'');
   el.onclick=()=>{ state.selectedIndex=i; update(); r.action&&r.action(); };
   const box=document.createElement('div'); box.className='gbox';
-  box.textContent=r.icon; box.style.color=r.accent||'#fff';
+  setIcon(box, r.iconImg, r.icon, r.accent||'#fff');
   const lab=document.createElement('div'); lab.className='glabel'; lab.textContent=r.title;
   el.appendChild(box); el.appendChild(lab);
   return el;
@@ -746,7 +801,7 @@ function mkRow(r,i,isAnswer){
   row.onclick=()=>{ state.selectedIndex=i; update(); r.action&&r.action(); };
 
   const ic=document.createElement('div'); ic.className='ricon';
-  ic.textContent=r.icon; ic.style.color=r.accent||'var(--txt-dim)';
+  setIcon(ic, r.iconImg, r.icon, r.accent);
   row.appendChild(ic);
 
   const body=document.createElement('div'); body.className='rbody';
@@ -784,7 +839,7 @@ function renderPinned(){
     el.className='pin'+(i===state.pinnedSel?' sel':'');
     el.onclick=()=>{ state.pinnedSel=i; launchApp(pn.id, pn.label); };
     const tile=document.createElement('div'); tile.className='tile';
-    tile.textContent=pn.id.slice(0,3); tile.style.color=pn.accent;
+    setIcon(tile, ICONS[pn.id], pn.id.slice(0,3), pn.accent);
     const lab=document.createElement('div'); lab.className='plabel'; lab.textContent=pn.label;
     el.appendChild(tile); el.appendChild(lab);
     row.appendChild(el);
@@ -1093,6 +1148,68 @@ document.getElementById('chipsToggle').onclick=function(){
   el.addEventListener('pointercancel',end);
   // swallow the click that follows a drag so rows aren't activated by a swipe
   el.addEventListener('click',e=>{ if(moved){ e.stopPropagation(); e.preventDefault(); moved=false; } },true);
+})();
+
+/* =====================================================================
+   SURFACE GESTURE — home → dock → search (swipe up), swipe down to close
+   One continuous drag drives a 0→1 progress: dock rises first, then the
+   search surface slides up from the bottom over it.
+   ===================================================================== */
+(function(){
+  const phone=document.getElementById('phone');
+  const home=document.getElementById('homeLayer');
+  const dock=document.getElementById('dockLayer');
+  const surf=document.getElementById('searchSurface');
+  const topbar=document.getElementById('topbar');
+  const kb=document.getElementById('keyboard');
+  const OPEN_DIST=320;
+  let progress=0, opened=false, dragging=false, startY=0, startP=0, moved=false;
+  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+
+  function apply(p){
+    // phase 1 (0→0.5): dock rises fully into view.
+    // phase 2 (0.5→1): search surface rises from bottom; dock recedes back down.
+    const dockY = p<=0.5 ? (1-p/0.5)*100 : ((p-0.5)/0.5)*100;
+    const searchY = (1-clamp((p-0.5)/0.5,0,1))*100;
+    dock.style.transform='translateY('+dockY+'%)';
+    surf.style.transform='translateY('+searchY+'%)';
+  }
+  function snap(toOpen){
+    opened=toOpen; progress=toOpen?1:0; apply(progress);
+    if(!toOpen){ closeApp(); setQuery(''); }   // reset the search when closed
+  }
+  apply(0);                                    // start on the home screen
+
+  let capEl=null;
+  function begin(e,el){ dragging=true; moved=false; startY=e.clientY; startP=progress; capEl=el; phone.classList.add('dragging'); }
+  function move(e){
+    if(!dragging) return;
+    const dy=startY-e.clientY;                  // up = positive
+    // only capture (and move) once it's clearly a drag — so taps stay taps
+    if(!moved && Math.abs(dy)>4){ moved=true; try{capEl.setPointerCapture(e.pointerId);}catch(_){} }
+    if(moved){ progress=clamp(startP+dy/OPEN_DIST,0,1); apply(progress); }
+  }
+  function end(){
+    if(!dragging) return; dragging=false;
+    phone.classList.remove('dragging');
+    if(moved) snap(progress>0.5);               // a real swipe snaps; a tap leaves state as-is
+  }
+
+  // open — swipe up on the home screen
+  home.addEventListener('pointerdown',e=>{ if(opened) return; begin(e,home); });
+  home.addEventListener('pointermove',move);
+  home.addEventListener('pointerup',end);
+  home.addEventListener('pointercancel',end);
+
+  // close — swipe down on the top chrome or keyboard (active while open)
+  [topbar,kb].forEach(el=>{
+    el.addEventListener('pointerdown',e=>{ if(!opened) return; begin(e,el); });
+    el.addEventListener('pointermove',move);
+    el.addEventListener('pointerup',end);
+    el.addEventListener('pointercancel',end);
+    // swallow the trailing tap only if it was a drag, so keys/toggles still fire on tap
+    el.addEventListener('click',e=>{ if(moved){ e.stopPropagation(); e.preventDefault(); moved=false; } },true);
+  });
 })();
 
 /* =====================================================================
