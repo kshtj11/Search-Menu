@@ -23,12 +23,10 @@
     --r:4px;            /* global corner radius */
     font-size:16px;
   }
-  *{box-sizing:border-box;margin:0;padding:0;}
-  html,body{height:100%;}
+  *{box-sizing:border-box;margin:0;padding:0;scrollbar-width:none;-ms-overflow-style:none;}
+  *::-webkit-scrollbar{display:none;width:0;height:0;}   /* hide every scrollbar */
+  html,body{height:100%;overflow:hidden;}                /* no page scroll/bars */
   body{
-
-  -ms-overflow-style: none;
-  scrollbar-width: none;
     background:#0a0a0a;
     font-family:'Sora',system-ui,sans-serif;
     color:var(--txt);
@@ -41,9 +39,6 @@
     padding:24px;
   }
 
-  body::-webkit-scrollbar {
-  display: none;
-}
   /* ---------- device frame (square, no stroke) ---------- */
   .phone{
     width:540px;
@@ -97,6 +92,10 @@
     flex:1 1 auto;
     min-height:0;
     overflow-y:auto;
+    -webkit-overflow-scrolling:touch;   /* momentum swipe on touch */
+    touch-action:pan-y;
+    overscroll-behavior:contain;
+    cursor:grab;
     padding:8px 30px 4px;
     display:flex;
     flex-direction:column;
@@ -164,11 +163,18 @@
   .row.answer .rtitle{font-size:18px;font-weight:500;color:#dfe8ff;}
   .answer-div{height:1px;background:var(--l2);margin:2px 0;}
 
-  /* tile row (app matches + search routes), like pinned apps — aligned to gutter */
-  .tilerow{display:flex;gap:14px;padding:2px 0 4px;}
+  /* tile row (app matches + search routes) — horizontally swipeable, aligned to gutter.
+     4px padding + -4px margin gives the selection ring room without breaking alignment. */
+  .tilerow{
+    display:flex;flex-wrap:nowrap;align-items:flex-start;gap:14px;
+    flex:0 0 auto;height:118px;            /* definite height: scroll container needs it */
+    padding:4px;margin:0 -4px;
+    overflow-x:auto;overflow-y:hidden;
+    touch-action:pan-x;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;
+  }
   .gtile{display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer;width:78px;flex:0 0 78px;}
   .gtile .gbox{
-    width:78px;height:78px;border-radius:var(--r);background:var(--l1);
+    width:78px;height:78px;flex:0 0 78px;border-radius:var(--r);background:var(--l1);
     display:flex;align-items:center;justify-content:center;font-size:9px;text-transform:lowercase;
     transition:transform .12s,box-shadow .12s;
   }
@@ -180,7 +186,7 @@
   .searchblock{padding:8px 0 4px;}
   .searchblock .searchquery{font-size:18px;color:#ffffff;margin-bottom:14px;padding:0;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .searchblock .tilerow{padding:0;}
+  .searchblock .tilerow{overflow-x:visible;}
 
   /* ---------- chips ---------- */
   .chips{
@@ -567,12 +573,19 @@ function update(){
   renderBody(p);
   renderChips();
   renderSearchIcon(p);
+
+  // when the typed text changes, jump the list back to the top (recall self-scrolls)
+  if(!state.showRecent && state._lastQ!==raw){
+    const r=document.getElementById('results'); if(r) r.scrollTop=0;
+  }
+  state._lastQ=raw;
 }
 
 function setQuery(v){
   state.query = v;
   state.selectedIndex = 0;
   state.showAllApps = false;
+  state.showRecent = false;
   update();
 }
 
@@ -634,16 +647,18 @@ function renderBody(p){
   const pinned=document.getElementById('pinnedWrap');
   const results=document.getElementById('results');
 
+  // ↑ recall takes over the surface even though the bar now holds the selected text
+  if(state.showRecent){
+    pinned.style.display='none';
+    results.style.display='flex';
+    renderRecent(results);
+    return;
+  }
+
   if(p.mode==='empty'){
-    if(state.showRecent){               // ↑ recall: scrollable recent-search list
-      pinned.style.display='none';
-      results.style.display='flex';
-      renderRecent(results);
-    }else{
-      pinned.style.display='block';
-      results.style.display='none';
-      renderPinned();
-    }
+    pinned.style.display='block';
+    results.style.display='none';
+    renderPinned();
     return;
   }
 
@@ -673,12 +688,10 @@ function renderBody(p){
     const d=document.createElement('div'); d.className='answer-div'; results.appendChild(d);
   }
 
-  // app matches → row of tiles (top 4, then "more")
+  // app matches → horizontally-swipeable row of tiles (swipe to discover more)
   if(groups.apps.length){
     const row=document.createElement('div'); row.className='tilerow';
-    const shown = state.showAllApps ? groups.apps : groups.apps.slice(0,4);
-    shown.forEach(([r,i])=>row.appendChild(mkTile(r,i)));
-    if(!state.showAllApps && groups.apps.length>4) row.appendChild(mkMoreTile());
+    groups.apps.forEach(([r,i])=>row.appendChild(mkTile(r,i)));
     results.appendChild(row);
   }
 
@@ -723,15 +736,6 @@ function mkTile(r,i){
   const box=document.createElement('div'); box.className='gbox';
   box.textContent=r.icon; box.style.color=r.accent||'#fff';
   const lab=document.createElement('div'); lab.className='glabel'; lab.textContent=r.title;
-  el.appendChild(box); el.appendChild(lab);
-  return el;
-}
-
-function mkMoreTile(){
-  const el=document.createElement('div'); el.className='gtile';
-  el.onclick=()=>{ state.showAllApps=true; update(); };
-  const box=document.createElement('div'); box.className='gbox'; box.style.color='var(--txt-dim)'; box.textContent='+';
-  const lab=document.createElement('div'); lab.className='glabel'; lab.style.color='var(--txt-dim)'; lab.textContent='more';
   el.appendChild(box); el.appendChild(lab);
   return el;
 }
@@ -787,14 +791,15 @@ function renderPinned(){
   });
 }
 
-// ↑ recall — "Recent searches" list, simple text rows, scrollable
+// ↑ recall — recent searches, reversed: most recent at the bottom (by the bar),
+// older ones above; ↑ walks upward into older. No title, bottom-anchored, scrolls.
 function renderRecent(container){
   container.innerHTML='';
-  const title=document.createElement('div'); title.className='list-title';
-  title.textContent='Recent searches';
-  container.appendChild(title);
+  const wrap=document.createElement('div');
+  wrap.style.cssText='margin-top:auto;padding-bottom:8px;';   // stick to bottom + gap above bar
   const grp=document.createElement('div'); grp.className='cardgroup';
-  state.recent.forEach((q,i)=>{
+  for(let i=state.recent.length-1;i>=0;i--){     // oldest → top, newest → bottom
+    const q=state.recent[i];
     const row=document.createElement('div');
     row.className='row recent'+(i===state.selectedIndex?' sel':'');
     row.onclick=()=>{ state.showRecent=false; setQuery(q); };
@@ -802,8 +807,12 @@ function renderRecent(container){
     const t=document.createElement('div'); t.className='rtitle'; t.textContent=q;
     body.appendChild(t); row.appendChild(body);
     grp.appendChild(row);
-  });
-  container.appendChild(grp);
+  }
+  wrap.appendChild(grp);
+  container.appendChild(wrap);
+  // start scrolled to the bottom-most (newest) element
+  container.scrollTop=container.scrollHeight;
+  requestAnimationFrame(()=>{ container.scrollTop=container.scrollHeight; });
 }
 
 function renderChips(){
@@ -822,9 +831,11 @@ function renderChips(){
    KEY HANDLING  (§2) — source-agnostic
    ===================================================================== */
 function moveSelection(d){
-  if(state.showRecent){                  // navigate the recall list instead
+  if(state.showRecent){                  // recall list is reversed: ↑ = older (+1)
     const n=state.recent.length; if(!n) return;
-    state.selectedIndex=(state.selectedIndex+d+n)%n; update(); return;
+    state.selectedIndex=Math.max(0,Math.min(n-1, state.selectedIndex - d));
+    state.query=state.recent[state.selectedIndex];   // type selected entry into the bar
+    update(); return;
   }
   if(parseInput(state.query).mode==='empty') return;
   const n=state.results.length; if(!n) return;
@@ -833,9 +844,8 @@ function moveSelection(d){
 }
 
 function doEnter(){
-  if(state.showRecent){                  // pick the highlighted recent search
-    const q=state.recent[state.selectedIndex]; if(q!=null){ state.showRecent=false; setQuery(q); }
-    return;
+  if(state.showRecent){                  // send the recent search now sitting in the bar
+    state.showRecent=false; state.selectedIndex=0; update();
   }
   const p=parseInput(state.query);
   if(p.mode==='empty'){                   // launch pinned #1
@@ -865,7 +875,9 @@ function doTab(shift){
 
 function openRecent(){
   if(!state.recent.length){ toast('No recent searches'); return; }
-  state.showRecent=true; state.selectedIndex=0; update();
+  state.showRecent=true; state.selectedIndex=0;
+  state.query=state.recent[0];           // newest entry drops into the bar
+  update();
 }
 function closeRecent(){ if(state.showRecent){ state.showRecent=false; update(); } }
 
@@ -878,7 +890,7 @@ function recordSearch(q){
 
 function typeChar(ch){ state.query+=ch; state.selectedIndex=0; state.showAllApps=false; state.showRecent=false; update(); }
 function backspace(){
-  if(state.showRecent){ state.showRecent=false; update(); return; }
+  state.showRecent=false;   // editing the populated text exits recall
   state.query=state.query.slice(0,-1); state.selectedIndex=0; state.showAllApps=false; update();
 }
 
@@ -1049,6 +1061,39 @@ document.getElementById('chipsToggle').onclick=function(){
   this.classList.toggle('on', state.showChips);
   renderChips();
 };
+
+/* =====================================================================
+   TOUCH — drag/swipe to scroll the results list
+   (real touch uses native momentum scroll; this adds mouse-drag in preview
+    and a tap-vs-drag guard so a swipe doesn't accidentally open a row)
+   ===================================================================== */
+(function(){
+  const el=document.getElementById('results');
+  let dragging=false, startX=0, startY=0, startTop=0, hRow=null, startLeft=0, axis=null, moved=false, pid=null;
+  el.addEventListener('pointerdown',e=>{
+    if(e.pointerType==='touch') return;          // let native momentum handle touch
+    dragging=true; moved=false; axis=null; pid=e.pointerId;
+    startX=e.clientX; startY=e.clientY; startTop=el.scrollTop;
+    hRow=e.target.closest('.tilerow');           // a horizontal scroller under the pointer?
+    startLeft=hRow?hRow.scrollLeft:0;
+    el.style.cursor='grabbing';
+  });
+  el.addEventListener('pointermove',e=>{
+    if(!dragging) return;
+    const dx=e.clientX-startX, dy=e.clientY-startY;
+    if(!axis && (Math.abs(dx)>4||Math.abs(dy)>4)){  // lock the dominant axis once moved
+      axis=(hRow && Math.abs(dx)>Math.abs(dy))?'x':'y';
+      moved=true; try{el.setPointerCapture(pid);}catch(_){}
+    }
+    if(axis==='x') hRow.scrollLeft=startLeft-dx;
+    else if(axis==='y') el.scrollTop=startTop-dy;
+  });
+  function end(){ dragging=false; el.style.cursor='grab'; }
+  el.addEventListener('pointerup',end);
+  el.addEventListener('pointercancel',end);
+  // swallow the click that follows a drag so rows aren't activated by a swipe
+  el.addEventListener('click',e=>{ if(moved){ e.stopPropagation(); e.preventDefault(); moved=false; } },true);
+})();
 
 /* =====================================================================
    BOOT
