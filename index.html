@@ -100,6 +100,9 @@
     display:flex;
     flex-direction:column;
     gap:10px;
+    /* fade clipped content at the bottom edge so it doesn't leave a stray sliver "bar" above the chips/bar */
+    -webkit-mask-image:linear-gradient(to bottom,#000 calc(100% - 16px),transparent 100%);
+    mask-image:linear-gradient(to bottom,#000 calc(100% - 16px),transparent 100%);
   }
   .results::-webkit-scrollbar{width:0;}
 
