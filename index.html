@@ -30,22 +30,20 @@
     background:#0a0a0a;
     font-family:'Sora',system-ui,sans-serif;
     color:var(--txt);
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    min-height:100vh;
-    gap:28px;
-    flex-wrap:wrap;
-    padding:24px;
   }
 
-  /* ---------- device frame (square, no stroke) ---------- */
+  /* ---------- device frame (square, no stroke) ----------
+     the single device div: holds the home screen AND the search surface,
+     dead-centered in the page both axes regardless of viewport size */
   .phone{
+    position:fixed;
+    top:50%;
+    left:50%;
+    transform:translate(-50%,-50%);
     width:540px;
     height:620px;
     background:var(--bg);
     box-shadow:0 24px 60px rgba(0,0,0,.6);
-    position:relative;
     overflow:hidden;
     display:flex;
     flex-direction:column;
@@ -306,11 +304,9 @@
   #phone:not(.dragging) #dockLayer,
   #phone:not(.dragging) #searchSurface{transition:transform .28s cubic-bezier(.22,.61,.36,1);}
 
-  .side{display:flex;flex-direction:column;align-items:center;}
 </style>
 </head>
 <body>
-  <div class="side">
     <div class="phone" id="phone">
       <!-- base home screen -->
       <div id="homeLayer"></div>
@@ -364,8 +360,7 @@
 
       <div class="toast" id="toast"></div>
       </div><!-- /searchSurface -->
-    </div>
-  </div>
+    </div><!-- /phone (device) -->
 
 <script>
 /* =====================================================================
