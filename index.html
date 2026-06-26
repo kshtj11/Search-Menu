@@ -144,6 +144,68 @@
       display: flex;
       flex-direction: column;
       min-height: 0;
+      position: relative;
+      /* anchor for the floating recent overlay */
+    }
+
+    /* ---------- recent-search overlay (SOLID window floating above the bar) ---------- */
+    .recent-ov {
+      position: absolute;
+      left: 30px;
+      bottom: 84px;
+      /* just above the search bar */
+      width: 300px;
+      z-index: 6;
+      background: #1c1c1c;
+      /* solid window — clearly raised off the black surface */
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 18px 44px rgba(0, 0, 0, .65);
+    }
+
+    .recent-ov.hidden {
+      display: none;
+    }
+
+    /* the rows scroll inside the solid window */
+    .rov-list {
+      max-height: 132px;
+      /* ~3.5 rows visible; the rest scrolls */
+      overflow-y: auto;
+      padding: 6px 0;
+      touch-action: pan-y;
+      overscroll-behavior: contain;
+    }
+
+    /* fixed gradient layer over the older queries — fades text into the solid bg,
+       window edges stay crisp */
+    .rov-fade {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 46px;
+      pointer-events: none;
+      background: linear-gradient(to bottom, #1c1c1c 0%, rgba(28, 28, 28, 0) 100%);
+    }
+
+    .recent-ov .rov-row {
+      padding: 8px 16px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 15px;
+      color: var(--txt-dim);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      cursor: pointer;
+    }
+
+    .recent-ov .rov-row.sel {
+      background: #2e2e2e;
+      color: #fff;
+      border-radius: 6px;
+      margin: 0 6px;
+      padding: 8px 10px;
     }
 
     /* results region grows; scrolls if needed */
@@ -161,9 +223,10 @@
       display: flex;
       flex-direction: column;
       gap: 10px;
-      /* fade clipped content at the bottom edge so it doesn't leave a stray sliver "bar" above the chips/bar */
-      -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent 100%);
-      mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent 100%);
+      /* fade both edges: top edge cues "more above" when the list scrolls (recall, long results),
+         bottom edge hides a stray sliver above the chips/bar */
+      -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 22px, #000 calc(100% - 16px), transparent 100%);
+      mask-image: linear-gradient(to bottom, transparent 0, #000 22px, #000 calc(100% - 16px), transparent 100%);
     }
 
     .results::-webkit-scrollbar {
@@ -492,9 +555,9 @@
       align-items: center;
       gap: 12px;
       background: var(--l1);
-      border-radius: var(--r);
+      border-radius: 18px;
       padding: 13px 18px;
-      min-height: 52px;
+      min-height: 68px;
     }
 
     .bar .sicon {
@@ -790,6 +853,10 @@
           <span class="knob"></span>
           <span class="lbl">Chips</span>
         </div>
+        <div class="toggle" id="recentToggle" title="Recent-search overlay">
+          <span class="knob"></span>
+          <span class="lbl">Recent overlay</span>
+        </div>
       </div>
 
       <div class="stack">
@@ -808,7 +875,13 @@
         <div class="bar" id="bar">
           <span class="sicon" id="sicon">⌕</span>
           <div class="field" id="field"></div>
-          <div class="barclose" id="barClose" title="Clear / close">✕</div>
+          <div class="barclose" id="barClose" title="Clear / close"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6 L18 18 M18 6 L6 18"/></svg></div>
+        </div>
+
+        <!-- recent-search overlay (solid window floating above the bar, over the live results) -->
+        <div id="recentOverlay" class="recent-ov hidden">
+          <div class="rov-list" id="recentList"></div>
+          <div class="rov-fade"></div>
         </div>
       </div>
 
@@ -848,6 +921,12 @@
       notes: 'app%20icons/notes.png',
     };
 
+    // the action that Enter will perform on each result type — shown grey, ahead of the
+    // typed text ("— open"), so you see what's about to happen before you commit.
+    const ACTION_VERB = {
+      app: 'open', action: 'open', code: 'run',
+      web: 'search web', filesroute: 'search in Files',
+    };
     // §6 system codes
     const CODES = {
       ter: {
@@ -921,6 +1000,7 @@
       showAllApps: false,     // app-tile row: top 4 + "more", or all
       showChips: false,       // suggestion chips off by default (top-bar toggle)
       showRecent: false,      // recent-search recall panel (↑ on empty bar)
+      recentOverlay: true,    // recall style: floating overlay (on) vs full list (off) — top-bar toggle
       recent: [               // history store, most-recent first (seeded for demo)
         'ter cd ~/downloads', 'wifi', '2 + 5', 'camera', 'snd vol 60',
         'brightness 40', 'files ~/photos', 'terminal', 'set bluetooth', 'maps',
@@ -989,16 +1069,23 @@
       }
 
       if (p.mode === 'peek') {
-        const stub = {
-          bat: '72% · 3h 41m left', net: 'Wi-Fi · MechaNet · -48dBm',
-          ram: '4.1 / 8 GB', cpu: '12% · 41°C'
-        };
-        const key = (p.query || '').toLowerCase();
-        const val = stub[key] || 'no reading';
-        out.push({
-          type: 'answer', icon: '?', accent: '#9bd0ff', title: val,
-          sub: '?' + key + ' · live peek', action: () => toast('Peek: ' + key)
-        });
+        // ? shows the whole system panel at once. typing after ? filters the list.
+        const READINGS = [
+          { key: 'bat', label: 'Battery', val: '72% · 3h 41m left' },
+          { key: 'net', label: 'Network', val: 'Wi-Fi · MechaNet · −48 dBm' },
+          { key: 'cpu', label: 'CPU', val: '12% · 41°C' },
+          { key: 'ram', label: 'Memory', val: '4.1 / 8 GB' },
+          { key: 'dsk', label: 'Storage', val: '47 / 128 GB' },
+          { key: 'upt', label: 'Uptime', val: '2d 14h 06m' },
+          { key: 'ip', label: 'IP address', val: '192.168.1.42' },
+          { key: 'os', label: 'OS', val: 'Mecha Linux 1.4 · kernel 6.8' },
+        ];
+        const q = (p.query || '').toLowerCase();
+        const list = q ? READINGS.filter(r => r.key.includes(q) || r.label.toLowerCase().includes(q)) : READINGS;
+        (list.length ? list : READINGS).forEach(r => out.push({
+          type: 'peek', icon: r.key, accent: '#9bd0ff', title: r.label, sub: r.val,
+          action: () => { copy(r.val); toast('Copied ' + r.label + ': ' + r.val); }
+        }));
         return out;
       }
 
@@ -1108,6 +1195,13 @@
     /* =====================================================================
        PIPELINE  — single render entry
        ===================================================================== */
+    // the result Enter would fire (the selected one) — drives the leading icon + action hint
+    function primaryResult() {
+      if (!state.results.length) return null;
+      const i = Math.max(0, Math.min(state.selectedIndex, state.results.length - 1));
+      return state.results[i] || state.results[0];
+    }
+
     function update() {
       const raw = state.query;
       const p = parseInput(raw);
@@ -1115,7 +1209,21 @@
       state.tokenCode = (p.mode === 'code') ? CODES[p.code] : null;
       state.results = resolve(p).filter(Boolean);
       state.chips = buildChips(p);
-      state.ghost = computeGhost(p, raw);
+      // autocomplete + action hint: only worth computing once there's a real query
+      // (≥3 chars) — below that a single letter fuzzy-matches everything, so skip the work.
+      state.ghost = '';
+      state.ghostAction = '';
+      const pr = (p.mode === 'plain' && p.query.length >= 3) ? primaryResult() : null;
+      if (pr) {
+        state.ghostAction = ACTION_VERB[pr.type] || '';
+        // launching an app → complete to the full app name ("cam" → "camera — open")
+        if ((pr.type === 'app' || pr.type === 'action') && pr.title.toLowerCase().startsWith(p.query.toLowerCase()))
+          state.ghost = pr.title.slice(p.query.length);
+        else
+          state.ghost = computeGhost(p, raw);   // history / web fallback
+      } else if (p.mode !== 'plain') {
+        state.ghost = computeGhost(p, raw);
+      }
 
       const selCount = state.showRecent ? state.recent.length : state.results.length;
       if (state.selectedIndex >= selCount) state.selectedIndex = 0;
@@ -1125,9 +1233,7 @@
       renderBody(p);
       renderChips();
       renderSearchIcon(p);
-
-      // ✕ clears text when present, becomes a ⌄ dismiss affordance when empty
-      const bc = document.getElementById('barClose'); if (bc) bc.textContent = raw ? '✕' : '⌄';
+      renderRecentOverlay();
 
       // when the typed text changes, jump the list back to the top (recall self-scrolls)
       if (!state.showRecent && state._lastQ !== raw) {
@@ -1186,8 +1292,9 @@
       field.appendChild(caret());
       const after = document.createElement('span'); after.textContent = raw.slice(cp);
       field.appendChild(after);
-      if (state.ghost && cp === raw.length) {
-        const g = document.createElement('span'); g.className = 'ghost'; g.textContent = state.ghost;
+      if (cp === raw.length && (state.ghost || state.ghostAction)) {
+        const g = document.createElement('span'); g.className = 'ghost';
+        g.textContent = state.ghost + (state.ghostAction ? '  —  ' + state.ghostAction : '');
         field.appendChild(g);
       }
     }
@@ -1195,16 +1302,18 @@
 
     function renderSearchIcon(p) {
       const ic = document.getElementById('sicon');
-      if (p.mode === 'code') {                 // only show the icon once an app/code is scoped
+      if (p.mode === 'code') {                 // scoped app/code icon
         ic.style.display = 'flex';
         ic.className = 'sicon app';
         const img = ICONS[state.tokenCode.appId];
         if (img) { ic.style.background = 'transparent'; setIcon(ic, img, p.code, '#fff'); }
         else { ic.style.background = state.tokenCode.accent; ic.textContent = p.code; }
-      } else {
-        ic.style.display = 'none';           // blank / plain search: no leading icon
-        ic.innerHTML = '';
+        return;
       }
+      // plain search: a leading icon only for web (magnifier) and Files routes.
+      // launching an app shows no icon — the "name — open" hint already says it.
+      ic.style.display = 'none';             // plain search: the "— action" hint is enough, no leading icon
+      ic.innerHTML = '';
     }
 
     /* =====================================================================
@@ -1214,8 +1323,9 @@
       const pinned = document.getElementById('pinnedWrap');
       const results = document.getElementById('results');
 
-      // ↑ recall takes over the surface even though the bar now holds the selected text
-      if (state.showRecent) {
+      // ↑ recall — list mode takes over the whole surface; overlay mode floats above
+      // the live results (so it falls through to render them normally underneath).
+      if (state.showRecent && !state.recentOverlay) {
         pinned.style.display = 'none';
         results.style.display = 'flex';
         renderRecent(results);
@@ -1235,6 +1345,16 @@
 
       // code mode keeps the simple TUI card list (icon + name + arg subtext)
       if (p.mode === 'code') {
+        const grp = document.createElement('div'); grp.className = 'cardgroup';
+        state.results.forEach((r, i) => grp.appendChild(mkRow(r, i, false)));
+        results.appendChild(grp);
+        return;
+      }
+
+      // ? peek → a full system panel: one grouped list of label · value rows
+      if (p.mode === 'peek') {
+        const tl = document.createElement('div'); tl.className = 'list-title'; tl.textContent = 'System';
+        results.appendChild(tl);
         const grp = document.createElement('div'); grp.className = 'cardgroup';
         state.results.forEach((r, i) => grp.appendChild(mkRow(r, i, false)));
         results.appendChild(grp);
@@ -1324,9 +1444,11 @@
       row.className = 'row' + (isAnswer ? ' answer' : '') + (i === state.selectedIndex ? ' sel' : '');
       row.onclick = () => { state.selectedIndex = i; update(); r.action && r.action(); };
 
-      const ic = document.createElement('div'); ic.className = 'ricon';
-      setIcon(ic, r.iconImg, r.icon, r.accent);
-      row.appendChild(ic);
+      if (r.type !== 'peek') {                  // peek rows are icon-less for a cleaner panel
+        const ic = document.createElement('div'); ic.className = 'ricon';
+        setIcon(ic, r.iconImg, r.icon, r.accent);
+        row.appendChild(ic);
+      }
 
       const body = document.createElement('div'); body.className = 'rbody';
       const t = document.createElement('div'); t.className = 'rtitle'; t.textContent = r.title;
@@ -1397,6 +1519,30 @@
       requestAnimationFrame(() => { container.scrollTop = container.scrollHeight; });
     }
 
+    // floating recent-search overlay — oldest at top, newest (selected) by the bar.
+    // ~3.5 rows visible; scroll by swipe/arrows/spacebar. Selected always scrolled into view.
+    function renderRecentOverlay() {
+      const ov = document.getElementById('recentOverlay');
+      const list = document.getElementById('recentList');
+      if (!ov || !list) return;
+      if (!state.showRecent || !state.recentOverlay || !state.recent.length) {
+        ov.className = 'recent-ov hidden'; list.innerHTML = ''; return;
+      }
+      ov.className = 'recent-ov';
+      list.innerHTML = '';
+      let selEl = null;
+      for (let i = state.recent.length - 1; i >= 0; i--) {   // oldest → top, newest → bottom
+        const q = state.recent[i];
+        const row = document.createElement('div');
+        row.className = 'rov-row' + (i === state.selectedIndex ? ' sel' : '');
+        row.textContent = q;
+        row.onclick = () => setQuery(q);     // tap to land it (cursor jumps to end, overlay hides)
+        list.appendChild(row);
+        if (i === state.selectedIndex) selEl = row;
+      }
+      if (selEl) requestAnimationFrame(() => selEl.scrollIntoView({ block: 'nearest' }));
+    }
+
     function renderChips() {
       const wrap = document.getElementById('chips');
       if (!state.showChips || !state.chips.length) { wrap.className = 'chips hidden'; return; }
@@ -1417,6 +1563,7 @@
         const n = state.recent.length; if (!n) return;
         state.selectedIndex = Math.max(0, Math.min(n - 1, state.selectedIndex - d));
         state.query = state.recent[state.selectedIndex];   // type selected entry into the bar
+        state.cursorPos = state.query.length;              // caret sits after the last letter
         update(); return;
       }
       if (parseInput(state.query).mode === 'empty') return;
@@ -1459,6 +1606,7 @@
       if (!state.recent.length) { toast('No recent searches'); return; }
       state.showRecent = true; state.selectedIndex = 0;
       state.query = state.recent[0];           // newest entry drops into the bar
+      state.cursorPos = state.query.length;    // caret after the last letter
       update();
     }
     function closeRecent() { if (state.showRecent) { state.showRecent = false; update(); } }
@@ -1476,7 +1624,7 @@
       state.selectedIndex = 0; state.showAllApps = false; state.showRecent = false; update();
     }
     function backspace() {
-      state.showRecent = false;   // editing the populated text exits recall
+      if (state.showRecent) { closeRecent(); return; }   // first backspace just dismisses the overlay
       const q = state.query, cp = Math.max(0, Math.min(q.length, state.cursorPos));
       if (cp > 0) { state.query = q.slice(0, cp - 1) + q.slice(cp); state.cursorPos = cp - 1; }
       state.selectedIndex = 0; state.showAllApps = false; update();
@@ -1693,6 +1841,27 @@
       this.classList.toggle('on', state.showChips);
       renderChips();
     };
+
+    // recent-search overlay style toggle (floating overlay vs full list)
+    document.getElementById('recentToggle').onclick = function () {
+      state.recentOverlay = !state.recentOverlay;
+      this.classList.toggle('on', state.recentOverlay);
+      update();
+    };
+    document.getElementById('recentToggle').classList.toggle('on', state.recentOverlay);
+
+    // swipe up on the search bar summons the recent-search overlay (touch + pointer)
+    (function () {
+      const bar = document.getElementById('bar');
+      let downY = null;
+      bar.addEventListener('pointerdown', e => { downY = e.clientY; });
+      bar.addEventListener('pointerup', e => {
+        if (downY == null) return;
+        const dy = downY - e.clientY; downY = null;
+        if (dy > 34 && state.recentOverlay && !state.showRecent) openRecent();
+      });
+      bar.addEventListener('pointercancel', () => { downY = null; });
+    })();
 
     // bar ✕ — touch-centric: clears the text if any, else closes the whole surface
     document.getElementById('barClose').onclick = () => {
