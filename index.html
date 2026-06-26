@@ -717,6 +717,9 @@
       background: #6a6a6a !important;
     }
 
+    /* spacebar owns its own touch — stop the browser hijacking the drag as a scroll */
+    .spacekey { touch-action: none; }
+
     /* ---------- launched app screen ---------- */
     .appscreen {
       position: absolute;
