@@ -22,10 +22,10 @@ Input string → **parseInput** → **resolve** (ranked) → **render**. All beh
 
 ## Input modes (parseInput)
 - **empty** → pinned grid
-- **peek** `?bat|net|ram|cpu` → live system readout
+- **peek** `?` alone → full system panel (bat/net/cpu/ram/dsk/upt/ip/os as a clean icon-less list); `?bat|net|ram…` → single live readout
 - **math** `=`/operators → inline answer (tap to copy) + Calculator tile + routes
 - **code** leading `ter/fil/set/mod/mus` → scoped command mode (args + Enter to run)
-- **plain** → fuzzy apps → actions → web/Files routes
+- **plain** → fuzzy apps → actions → web/Files routes (≥3 chars before any check runs)
 
 ## Resolve hierarchy (ranked Result[])
 answers → app tiles (fuzzy) → action cards → general-search routes (Search + Files). `fuzzy()` scores prefix(3) > substring(2) > subsequence(1).
@@ -36,8 +36,10 @@ answers → app tiles (fuzzy) → action cards → general-search routes (Search
 - **Cards**: grouped list w/ hairline separators, icon + name
 - **Answer**: grey-framed accent row (math/peek)
 - **Routes**: query text + Search/Files tiles
-- **Recent recall**: bottom-anchored reversed history list
-- **Bar**: styled code token (accent), caret at `cursorPos`, ghost autosuggest, app icon when scoped; ✕ = clear-text / ⌄ = close-surface
+- **Action hints** (≥3 chars): grey autocomplete tail per route — `app — open`, `… — search in files`, `… — search web` (icon-less; leading icon only in code mode)
+- **Recent recall** (toggle): solid floating overlay window (`#1c1c1c`, shadow, ~3.5 rows) anchored above the bar; older queries fade via a fixed gradient text-layer (`.rov-fade`), selected row crisp. Off → bottom-anchored full reversed-history list.
+- **Results fade**: both edges masked (top 22px, bottom 16px) so swipeable tiles don't clip hard against chips/bar
+- **Bar**: styled code token (accent), caret at `cursorPos`, ghost autosuggest, app icon when scoped; SVG cross = clear-text / close-surface; `min-height:68px`, `border-radius:18px`
 
 ## Interaction
 - **Keyboard-agnostic** key handling (hardware + on-screen share one path): Enter (run/launch pinned#1), ↑↓ (select; ↑ on empty = recall), ←→ (caret; → accepts ghost), Tab (accept ghost / first arg / navigate), Esc (close recall), Backspace, type.
@@ -45,7 +47,7 @@ answers → app tiles (fuzzy) → action cards → general-search routes (Search
 - **Ghost autocomplete**: code-token completion (`te`→`ter`) + terminal-style history autosuggest.
 - **On-screen keyboard**: kbd-alpha QWERTY, SVG shift/back/enter glyphs.
 - **Spacebar trackpad**: hold/drag space → cursor mode (dims keys, brightens space); ←→ moves caret, ↑↓ = arrow keys, tap = space.
-- **Recent searches**: dedupe history (cap 20), recall panel via ↑ on empty bar.
+- **Recent searches**: dedupe history (cap 20). Overlay mode — **swipe up on bar** summons it; ↑↓ / spacebar / touch scroll between rows; landing on a query places caret **after the last letter**; **Backspace dismisses** the overlay (doesn't delete). Live results render behind it. Non-overlay mode — recall list via ↑ on empty bar.
 
 ## Gestures
 - **Open**: swipe up on home — one 0→1 progress; dock rises (phase 1), search slides up + dock recedes (phase 2). `OPEN_DIST=260`.
@@ -56,4 +58,13 @@ answers → app tiles (fuzzy) → action cards → general-search routes (Search
 Terminal (fake shell: cd/ls/pwd), Files (filtered list), toasts for the rest. `‹ back` / Esc closes.
 
 ## Toggles
-On-screen↔Connected KB · Chips on/off.
+On-screen↔Connected KB · Chips on/off · Recent overlay on/off (solid window vs full list).
+
+## Figma documentation (file `H1f7PUCNLbEBou7eK62XQH`, section `667:3`)
+Short description of each board:
+- **User-flow screens** — main normal flows rebuilt to match the prototype: neutral/pinned state, type-`a`-with-results (no keyboard), expanded search, in-app, web search, files.
+- **Keyboard component** (`674:5`) — reusable non-interactive QWERTY.
+- **Icon images frame** (`680:912`) — real app icons (`camera/terminal/music/files/notes/settings-64`) used as IMAGE fills.
+- **Search bar component** — variant set documenting every bar state (empty, typing, code token, ghost, scoped icon) for the design system.
+- **Code-arg explorations** — settings flow with Minecraft-style stacked args rising as you type + gray autofill; a "many options" variant with scroll-gradient + reddish semantic reset/disable (sudo → password); files flow (no sudo); plus a list-format version rendering args as normal search rows.
+- **Recent-search overlay frame** (`698:3168` → panel `710:2`) — solid clipping window (260×132, `#161616`, radius 18) with rows + inner gradient fade layer.
