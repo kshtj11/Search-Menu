@@ -303,6 +303,21 @@
       color: var(--txt-dim);
     }
 
+    /* Tab-selected recent row — a lighter pill within the section (no outer ring) */
+    .recent-peek .cardgroup .row.sel {
+      background: var(--l3);
+      box-shadow: none;
+      border-radius: 8px;
+      border-bottom-color: transparent;
+      margin: 0 -8px;
+      padding-left: 8px;
+      padding-right: 8px;
+    }
+
+    .recent-peek .cardgroup .row.sel .rtitle {
+      color: #fff;
+    }
+
     /* results region grows; scrolls if needed */
     /* 30px side gutter: app tiles, card icons & query text all line up here */
     .results {
@@ -1144,7 +1159,7 @@
       chips: [],
       tokenCode: null,        // active recognized code object (for bar/icon styling)
       ghost: '',              // tab-completion ghost text
-      pinnedSel: 0,
+      neutralSel: 0,          // neutral-state selection: 0..3 = pinned apps, then recent rows
       onScreenKB: true,
       showAllApps: false,     // app-tile row: top 4 + "more", or all
       showChips: false,       // suggestion chips off by default (top-bar toggle)
@@ -1444,6 +1459,7 @@
       state.selectedIndex = 0;
       state.showAllApps = false;
       state.showRecent = false;
+      if (v === '') state.neutralSel = 0;       // back to neutral → reselect the first pinned app
       update();
     }
     function moveCursor(d) {
@@ -1729,8 +1745,8 @@
       row.innerHTML = '';
       PINNED.forEach((pn, i) => {
         const el = document.createElement('div');
-        el.className = 'pin' + (i === state.pinnedSel ? ' sel' : '');
-        el.onclick = () => { state.pinnedSel = i; launchApp(pn.id, pn.label); };
+        el.className = 'pin' + (i === state.neutralSel ? ' sel' : '');
+        el.onclick = () => { state.neutralSel = i; launchApp(pn.id, pn.label); };
         const tile = document.createElement('div'); tile.className = 'tile';
         setIcon(tile, ICONS[pn.id], pn.id.slice(0, 3), pn.accent);
         const lab = document.createElement('div'); lab.className = 'plabel'; lab.textContent = pn.label;
@@ -1751,14 +1767,18 @@
       const tl = document.createElement('div'); tl.className = 'list-title'; tl.textContent = 'Recent searches';
       host.appendChild(tl);
       const grp = document.createElement('div'); grp.className = 'cardgroup';
-      state.recent.forEach(q => {
-        const row = document.createElement('div'); row.className = 'row';
+      let selRow = null;
+      state.recent.forEach((q, j) => {
+        const idx = PINNED.length + j;                 // selection index (after the pinned apps)
+        const row = document.createElement('div'); row.className = 'row' + (idx === state.neutralSel ? ' sel' : '');
         const t = document.createElement('div'); t.className = 'rtitle'; t.textContent = q;
         row.appendChild(t);
-        row.onclick = () => setQuery(q);          // tap re-runs the query
+        row.onclick = () => { state.neutralSel = idx; setQuery(q); };   // tap re-runs the query
         grp.appendChild(row);
+        if (idx === state.neutralSel) selRow = row;
       });
       host.appendChild(grp);
+      if (selRow) requestAnimationFrame(() => selRow.scrollIntoView({ block: 'nearest' }));
     }
 
     // ↑ recall — recent searches, reversed: most recent at the bottom (by the bar),
@@ -1905,14 +1925,24 @@
       update();
     }
 
+    // neutral-state Tab navigation — cycle the selection over pinned apps then recent rows
+    function cycleNeutral(d) {
+      const total = PINNED.length + state.recent.length;
+      if (!total) return;
+      state.neutralSel = (state.neutralSel + d + total) % total;
+      update();
+    }
+
     function doEnter() {
       if (state.showRecent) {                  // send the recent search now sitting in the bar
         state.showRecent = false; state.selectedIndex = 0; update();
       }
       const p = parseInput(state.query);
-      if (p.mode === 'empty') {                   // launch pinned #1
-        const pn = PINNED[state.pinnedSel || 0];
-        launchApp(pn.id, pn.label); return;
+      if (p.mode === 'empty') {                   // launch the selected pinned app, or re-run a recent
+        const sel = state.neutralSel || 0;
+        if (sel < PINNED.length) { const pn = PINNED[sel]; launchApp(pn.id, pn.label); }
+        else { setQuery(state.recent[sel - PINNED.length] || ''); }
+        return;
       }
       recordSearch(state.query);              // remember it (terminal-style history)
       const r = state.results[state.selectedIndex];
@@ -1922,6 +1952,7 @@
     // Tab: accept ghost/autosuggest first; otherwise navigate selection forward
     function doTab(shift) {
       if (state.showRecent) { moveSelection(shift ? -1 : 1); return; }
+      if (parseInput(state.query).mode === 'empty') { cycleNeutral(shift ? -1 : 1); return; }   // pinned + recent
       if (state._argSug) { acceptArg(); return; }   // Tab accepts the highlighted argument
       if (state.ghost) {                        // complete code OR history autosuggest
         const p = parseInput(state.query);
