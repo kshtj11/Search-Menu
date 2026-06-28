@@ -208,6 +208,49 @@
       padding: 8px 10px;
     }
 
+    /* ---------- Minecraft-style positional argument stack ---------- */
+    .arg-stack {
+      position: absolute;
+      z-index: 7;
+      min-width: 96px;
+      max-width: 240px;
+      background: #1c1c1c;
+      border-radius: 10px;
+      padding: 5px;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, .6);
+      overflow: hidden;
+    }
+
+    .arg-stack.hidden {
+      display: none;
+    }
+
+    .arg-row {
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 15px;
+      line-height: 20px;
+      color: var(--txt-dim);
+      white-space: nowrap;
+      cursor: pointer;
+    }
+
+    /* highlighted option — lighter pill, white text (matches the bar ghost) */
+    .arg-row.sel {
+      background: #3a3a3a;
+      color: #fff;
+    }
+
+    /* the already-typed prefix reads dim, the completion bright */
+    .arg-row .arg-pre {
+      color: var(--txt-faint);
+    }
+
+    .arg-row.sel .arg-pre {
+      color: #c8c8c8;
+    }
+
     /* results region grows; scrolls if needed */
     /* 30px side gutter: app tiles, card icons & query text all line up here */
     .results {
@@ -886,6 +929,9 @@
           <div class="rov-list" id="recentList"></div>
           <div class="rov-fade"></div>
         </div>
+
+        <!-- Minecraft-style positional argument stack (anchored above the caret in code mode) -->
+        <div id="argStack" class="arg-stack hidden"></div>
       </div>
 
       <!-- on-screen keyboard -->
@@ -954,6 +1000,35 @@
       },
     };
 
+    // positional argument grammar (Minecraft-command style): for each code, `_` is the
+    // first-position option set; each value key maps to the NEXT position's options for
+    // that value. The suggestion stack walks this tree one argument at a time.
+    const ARG_TREE = {
+      ter: {
+        _: ['cd', 'ls', 'pwd', 'cat', 'clear'],
+        cd: ['~/', '~/downloads', '~/photos', '..'],
+        ls: ['-l', '-a', '~/'],
+        cat: ['notes.md', 'log.txt'],
+      },
+      fil: {
+        _: ['~/downloads', '~/photos', 'recent', 'trash', '*.png'],
+      },
+      set: {
+        _: ['wifi', 'brightness', 'bluetooth', 'airplane', 'volume'],
+        wifi: ['on', 'off'], bluetooth: ['on', 'off'], airplane: ['on', 'off'],
+        brightness: ['10', '40', '70', '100'], volume: ['0', '30', '60', '100'],
+      },
+      mod: {
+        _: ['gamepad', 'keyboard', 'lidar', 'thermal'],
+        gamepad: ['connect', 'disconnect'], keyboard: ['connect', 'disconnect'],
+        lidar: ['on', 'off'], thermal: ['on', 'off'],
+      },
+      mus: {
+        _: ['play', 'pause', 'next', 'prev', 'vol', 'shuffle'],
+        vol: ['0', '30', '60', '100'], shuffle: ['on', 'off'],
+      },
+    };
+
     // reverse map: app id → its TUI code (for the grayed code shown under tiles)
     const CODE_BY_APP = Object.fromEntries(Object.entries(CODES).map(([c, v]) => [v.appId, c]));
 
@@ -1004,6 +1079,9 @@
       showChips: false,       // suggestion chips off by default (top-bar toggle)
       showRecent: false,      // recent-search recall panel (↑ on empty bar)
       recentOverlay: true,    // recall style: floating overlay (on) vs full list (off) — top-bar toggle
+      cmdSel: 0,              // highlighted option in the positional argument stack
+      _argSug: null,          // current arg suggestions {code, options, partial, completed} or null
+      _argSig: null,          // signature of the current option set (resets cmdSel when it changes)
       recent: [               // history store, most-recent first (seeded for demo)
         'ter cd ~/downloads', 'wifi', '2 + 5', 'camera', 'snd vol 60',
         'brightness 40', 'files ~/photos', 'terminal', 'set bluetooth', 'maps',
@@ -1103,6 +1181,8 @@
         });
         // show the underlying app too
         out.push(appResult(APPS.find(a => a.id === c.appId)));
+        // even inside a scoped command, keep the web/files escape hatches (like plain strings)
+        routeResults(p.query).forEach(r => out.push(r));
         return out;
       }
 
@@ -1195,6 +1275,30 @@
       return '';
     }
 
+    // positional argument suggestions for a scoped command (Minecraft-style).
+    // Walks ARG_TREE one completed arg at a time; the last (unfinished) token filters
+    // the current position's options by prefix. raw = full bar text incl. trailing space.
+    function argSuggest(code, raw) {
+      const tree = ARG_TREE[code]; if (!tree) return null;
+      const lead = raw.trimStart();
+      const firstWord = lead.split(/\s+/)[0];
+      const afterFirst = lead.slice(firstWord.length);     // leading sep space(s) + the args
+      const endsSpace = afterFirst === '' || /\s$/.test(afterFirst);   // sitting on a fresh position
+      const toks = afterFirst.split(/\s+/).filter(Boolean);
+      const completed = endsSpace ? toks : toks.slice(0, -1);
+      const partial = endsSpace ? '' : (toks[toks.length - 1] || '');
+      // descend the tree by each completed arg
+      let opts = tree._;
+      for (const a of completed) {
+        const next = tree[a];
+        if (!next) return null;                            // no grammar past here → stop suggesting
+        opts = next;
+      }
+      const options = opts.filter(o => o.toLowerCase().startsWith(partial.toLowerCase()));
+      if (!options.length) return null;
+      return { code, options, partial, completed };
+    }
+
     /* =====================================================================
        PIPELINE  — single render entry
        ===================================================================== */
@@ -1228,6 +1332,20 @@
         state.ghost = computeGhost(p, raw);
       }
 
+      // scoped command → positional argument suggestions (stack above the caret + ghost)
+      state._argSug = null;
+      if (p.mode === 'code') {
+        const sug = argSuggest(p.code, raw);
+        if (sug) {
+          const sig = sug.code + '|' + sug.completed.join(' ') + '|' + sug.options.join(',');
+          if (sig !== state._argSig) { state.cmdSel = 0; state._argSig = sig; }   // new position → reset highlight
+          state.cmdSel = Math.max(0, Math.min(sug.options.length - 1, state.cmdSel));
+          state._argSug = sug;
+          state.ghost = (sug.options[state.cmdSel] || '').slice(sug.partial.length);   // grey ghost of the pick
+          state.ghostAction = '';
+        } else { state._argSig = null; }
+      }
+
       const selCount = state.showRecent ? state.recent.length : state.results.length;
       if (state.selectedIndex >= selCount) state.selectedIndex = 0;
       if (state.selectedIndex < 0) state.selectedIndex = 0;
@@ -1237,6 +1355,7 @@
       renderChips();
       renderSearchIcon(p);
       renderRecentOverlay();
+      renderArgStack();       // caret-anchored after renderBar drew the caret
 
       // when the typed text changes, jump the list back to the top (recall self-scrolls)
       if (!state.showRecent && state._lastQ !== raw) {
@@ -1258,8 +1377,16 @@
       update();
     }
     // shared up/down behaviour (used by hardware keys AND spacebar-swipe)
-    function arrowUp() { if (state.query === '' && !state.showRecent) openRecent(); else moveSelection(-1); }
-    function arrowDown() { moveSelection(1); }
+    function arrowUp() {
+      if (state.showRecent) { moveSelection(-1); return; }
+      if (state._argSug) { cycleArg(-1); return; }     // walk the argument stack
+      if (state.query === '') { openRecent(); return; }
+      moveSelection(-1);
+    }
+    function arrowDown() {
+      if (state._argSug) { cycleArg(1); return; }
+      moveSelection(1);
+    }
 
     /* =====================================================================
        RENDER — bar token state (§3)
@@ -1285,6 +1412,10 @@
         const rest = document.createElement('span'); rest.textContent = lead[3];
         field.appendChild(rest);
         field.appendChild(caret());
+        if (state.ghost) {                       // grey ghost of the highlighted arg option
+          const g = document.createElement('span'); g.className = 'ghost'; g.textContent = state.ghost;
+          field.appendChild(g);
+        }
         return;
       }
 
@@ -1346,11 +1477,25 @@
       results.style.display = 'flex';
       results.innerHTML = '';
 
-      // code mode keeps the simple TUI card list (icon + name + arg subtext)
+      // code mode keeps the simple TUI card list (icon + name + arg subtext),
+      // then the web/files routes as a tile block underneath (same as plain strings)
       if (p.mode === 'code') {
         const grp = document.createElement('div'); grp.className = 'cardgroup';
-        state.results.forEach((r, i) => grp.appendChild(mkRow(r, i, false)));
+        const routes = [];
+        state.results.forEach((r, i) => {
+          if (r.type === 'web' || r.type === 'filesroute') { routes.push([r, i]); return; }
+          grp.appendChild(mkRow(r, i, false));
+        });
         results.appendChild(grp);
+        if (routes.length) {
+          const block = document.createElement('div'); block.className = 'searchblock';
+          const q = document.createElement('div'); q.className = 'searchquery'; q.textContent = '"' + (p.query || '') + '"';
+          block.appendChild(q);
+          const row = document.createElement('div'); row.className = 'tilerow';
+          routes.forEach(([r, i]) => row.appendChild(mkTile(r, i)));
+          block.appendChild(row);
+          results.appendChild(block);
+        }
         return;
       }
 
@@ -1546,6 +1691,62 @@
       if (selEl) requestAnimationFrame(() => selEl.scrollIntoView({ block: 'nearest' }));
     }
 
+    // Minecraft-style argument stack — a small column of the current position's options,
+    // anchored above the caret (the start of the arg being typed). Highlighted = cmdSel.
+    function renderArgStack() {
+      const stk = document.getElementById('argStack');
+      if (!stk) return;
+      const sug = state._argSug;
+      if (!sug) { stk.className = 'arg-stack hidden'; stk.innerHTML = ''; return; }
+      stk.className = 'arg-stack';
+      stk.innerHTML = '';
+      sug.options.forEach((opt, i) => {
+        const row = document.createElement('div');
+        row.className = 'arg-row' + (i === state.cmdSel ? ' sel' : '');
+        // show the matched prefix dim + the completion bright, so it reads like the ghost
+        if (sug.partial && opt.toLowerCase().startsWith(sug.partial.toLowerCase())) {
+          const a = document.createElement('span'); a.className = 'arg-pre'; a.textContent = opt.slice(0, sug.partial.length);
+          const b = document.createElement('span'); b.textContent = opt.slice(sug.partial.length);
+          row.appendChild(a); row.appendChild(b);
+        } else { row.textContent = opt; }
+        row.onclick = () => { state.cmdSel = i; acceptArg(); };
+        stk.appendChild(row);
+      });
+      // anchor synchronously: left-align the option text with the caret; bottom just above the bar.
+      // getBoundingClientRect forces layout, so no rAF needed (and rAF can be throttled off-screen).
+      const caretEl = document.querySelector('#field .caret');
+      const stackBox = document.querySelector('.stack');
+      const bar = document.getElementById('bar');
+      if (!caretEl || !stackBox || !bar) return;
+      const cr = caretEl.getBoundingClientRect();
+      const sr = stackBox.getBoundingClientRect();
+      const br = bar.getBoundingClientRect();
+      let left = (cr.left - sr.left) - 17;                  // -17 ≈ stack padding (5) + row padding (12) so text lines up with caret
+      left = Math.max(8, Math.min(left, sr.width - stk.offsetWidth - 8));
+      stk.style.left = left + 'px';
+      stk.style.bottom = (sr.bottom - br.top + 8) + 'px';   // 8px gap above the bar
+    }
+
+    // accept the highlighted option: complete the partial token + a trailing space so the
+    // NEXT position's options appear immediately.
+    function acceptArg() {
+      const sug = state._argSug; if (!sug) return;
+      const opt = sug.options[state.cmdSel] || sug.options[0];
+      let q = sug.code;
+      if (sug.completed.length) q += ' ' + sug.completed.join(' ');
+      q += ' ' + opt + ' ';
+      state.query = q; state.cursorPos = q.length;
+      state.selectedIndex = 0; state.showRecent = false;
+      update();
+    }
+
+    // cycle the highlighted option within the current stack
+    function cycleArg(d) {
+      const n = state._argSug ? state._argSug.options.length : 0; if (!n) return;
+      state.cmdSel = (state.cmdSel + d + n) % n;
+      update();
+    }
+
     function renderChips() {
       const wrap = document.getElementById('chips');
       if (!state.showChips || !state.chips.length) { wrap.className = 'chips hidden'; return; }
@@ -1592,15 +1793,12 @@
     // Tab: accept ghost/autosuggest first; otherwise navigate selection forward
     function doTab(shift) {
       if (state.showRecent) { moveSelection(shift ? -1 : 1); return; }
+      if (state._argSug) { acceptArg(); return; }   // Tab accepts the highlighted argument
       if (state.ghost) {                        // complete code OR history autosuggest
         const p = parseInput(state.query);
         const sep = p.mode === 'plain' && CODES[(state.query.trim() + state.ghost)] ? ' ' : '';
         setQuery(state.query + state.ghost + sep);
         return;
-      }
-      const p = parseInput(state.query);
-      if (p.mode === 'code' && p.args.length === 0) {
-        setQuery(p.code + ' ' + CODES[p.code].args[0] + ' '); return;
       }
       moveSelection(shift ? -1 : 1);              // tab navigation through results
     }
@@ -1645,7 +1843,8 @@
       else if (e.key === 'ArrowLeft') { moveCursor(-1); e.preventDefault(); }
       else if (e.key === 'Tab') { doTab(e.shiftKey); e.preventDefault(); }
       else if (e.key === 'ArrowRight') {
-        if (state.ghost && state.cursorPos === state.query.length) { setQuery(state.query + state.ghost); }
+        if (state._argSug && state.cursorPos === state.query.length) { acceptArg(); }   // → accepts the arg
+        else if (state.ghost && state.cursorPos === state.query.length) { setQuery(state.query + state.ghost); }
         else moveCursor(1);
         e.preventDefault();
       }
