@@ -273,6 +273,9 @@
 
     .recent-peek .list-title {
       padding-bottom: 8px;
+      text-transform: none;       /* sentence case: "Recent searches" */
+      letter-spacing: normal;
+      font-size: 13px;
     }
 
     /* grouped section: gray rounded panel, rows divided by inset hairlines */
@@ -293,15 +296,11 @@
       border-bottom: none;
     }
 
-    .recent-peek .row .ricon {
-      width: 34px;
-      height: 34px;
-      flex: 0 0 34px;
-      border-radius: 8px;
-    }
-
+    /* plain text, same monospace query text the recall overlay shows */
     .recent-peek .row .rtitle {
+      font-family: 'JetBrains Mono', monospace;
       font-size: 15px;
+      color: var(--txt-dim);
     }
 
     /* results region grows; scrolls if needed */
@@ -1155,9 +1154,9 @@
       argList: false,         // arg options as a results list (on) vs floating stack (off) — top-bar toggle
       _argSug: null,          // current arg suggestions {code, options, partial, completed} or null
       _argSig: null,          // signature of the current option set (resets cmdSel when it changes)
-      recent: [               // recent activity, most-recent first (each resolves to the action performed)
-        'video', 'airplane', 'balance', 'brightness', 'wifi',
-        'volume', 'maps', 'terminal', 'camera', 'files',
+      recent: [               // recent search queries, most-recent first (raw text, incl. code ones)
+        'set wifi off', 'ter cd ~/downloads', '2 + 5', 'fil ~/photos', 'mus vol 60',
+        'wifi', 'brightness 40', 'set bluetooth', 'maps', 'camera',
       ],
     };
 
@@ -1742,27 +1741,21 @@
       });
     }
 
-    // neutral-state Recent activity — the recent actions performed, each resolved to an
-    // icon + App › action card. The empty state scrolls, so the whole history is listed.
+    // neutral-state Recent searches — plain text of the raw query strings (same text the
+    // recall overlay shows), in a grouped gray section. The empty state scrolls; tap re-runs.
     function renderRecentPeek() {
       const host = document.getElementById('recentPeek');
       if (!host) return;
       host.innerHTML = '';
       if (!state.recent.length) return;
-      const tl = document.createElement('div'); tl.className = 'list-title'; tl.textContent = 'Recent';
+      const tl = document.createElement('div'); tl.className = 'list-title'; tl.textContent = 'Recent searches';
       host.appendChild(tl);
       const grp = document.createElement('div'); grp.className = 'cardgroup';
       state.recent.forEach(q => {
-        const r = (resolve(parseInput(q)).filter(Boolean))[0];
-        if (!r) return;
         const row = document.createElement('div'); row.className = 'row';
-        const ic = document.createElement('div'); ic.className = 'ricon';
-        setIcon(ic, r.iconImg, r.icon, r.accent);
-        row.appendChild(ic);
-        const body = document.createElement('div'); body.className = 'rbody';
-        const t = document.createElement('div'); t.className = 'rtitle'; t.textContent = r.title;
-        body.appendChild(t); row.appendChild(body);
-        row.onclick = () => setQuery(q);          // tap re-runs the recent search
+        const t = document.createElement('div'); t.className = 'rtitle'; t.textContent = q;
+        row.appendChild(t);
+        row.onclick = () => setQuery(q);          // tap re-runs the query
         grp.appendChild(row);
       });
       host.appendChild(grp);
