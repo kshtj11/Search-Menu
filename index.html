@@ -251,6 +251,20 @@
       color: #c8c8c8;
     }
 
+    /* list-mode arg options — icon-less rows in the results list */
+    .arg-listrow {
+      padding-left: 4px;
+    }
+
+    .arg-listrow .rtitle {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 15px;
+    }
+
+    .arg-listrow .arg-pre {
+      color: var(--txt-faint);
+    }
+
     /* results region grows; scrolls if needed */
     /* 30px side gutter: app tiles, card icons & query text all line up here */
     .results {
@@ -903,6 +917,10 @@
           <span class="knob"></span>
           <span class="lbl">Recent overlay</span>
         </div>
+        <div class="toggle" id="listToggle" title="Command args as a list instead of the floating stack">
+          <span class="knob"></span>
+          <span class="lbl">List</span>
+        </div>
       </div>
 
       <div class="stack">
@@ -1080,6 +1098,7 @@
       showRecent: false,      // recent-search recall panel (↑ on empty bar)
       recentOverlay: true,    // recall style: floating overlay (on) vs full list (off) — top-bar toggle
       cmdSel: 0,              // highlighted option in the positional argument stack
+      argList: false,         // arg options as a results list (on) vs floating stack (off) — top-bar toggle
       _argSug: null,          // current arg suggestions {code, options, partial, completed} or null
       _argSig: null,          // signature of the current option set (resets cmdSel when it changes)
       recent: [               // history store, most-recent first (seeded for demo)
@@ -1480,6 +1499,29 @@
       // code mode keeps the simple TUI card list (icon + name + arg subtext),
       // then the web/files routes as a tile block underneath (same as plain strings)
       if (p.mode === 'code') {
+        // list mode: the current position's options render as icon-less rows up top
+        // (same role as the floating stack, just in the results list). cmdSel drives the highlight.
+        if (state.argList && state._argSug) {
+          const sug = state._argSug;
+          const tl = document.createElement('div'); tl.className = 'list-title';
+          tl.textContent = (sug.completed.length ? sug.code + ' ' + sug.completed.join(' ') : sug.code) + ' …';
+          results.appendChild(tl);
+          const og = document.createElement('div'); og.className = 'cardgroup';
+          sug.options.forEach((opt, i) => {
+            const row = document.createElement('div');
+            row.className = 'row arg-listrow' + (i === state.cmdSel ? ' sel' : '');
+            const body = document.createElement('div'); body.className = 'rbody';
+            const t = document.createElement('div'); t.className = 'rtitle';
+            if (sug.partial && opt.toLowerCase().startsWith(sug.partial.toLowerCase())) {
+              const a = document.createElement('span'); a.className = 'arg-pre'; a.textContent = opt.slice(0, sug.partial.length);
+              t.appendChild(a); t.appendChild(document.createTextNode(opt.slice(sug.partial.length)));
+            } else { t.textContent = opt; }
+            body.appendChild(t); row.appendChild(body);
+            row.onclick = () => { state.cmdSel = i; acceptArg(); };
+            og.appendChild(row);
+          });
+          results.appendChild(og);
+        }
         const grp = document.createElement('div'); grp.className = 'cardgroup';
         const routes = [];
         state.results.forEach((r, i) => {
@@ -1697,7 +1739,7 @@
       const stk = document.getElementById('argStack');
       if (!stk) return;
       const sug = state._argSug;
-      if (!sug) { stk.className = 'arg-stack hidden'; stk.innerHTML = ''; return; }
+      if (!sug || state.argList) { stk.className = 'arg-stack hidden'; stk.innerHTML = ''; return; }   // list mode renders in the results instead
       stk.className = 'arg-stack';
       stk.innerHTML = '';
       sug.options.forEach((opt, i) => {
@@ -1712,19 +1754,30 @@
         row.onclick = () => { state.cmdSel = i; acceptArg(); };
         stk.appendChild(row);
       });
-      // anchor synchronously: left-align the option text with the caret; bottom just above the bar.
+      // anchor synchronously to the START of the current argument token (not the caret) so the
+      // stack stays put while you type within an arg — only stepping when a new arg begins.
       // getBoundingClientRect forces layout, so no rAF needed (and rAF can be throttled off-screen).
-      const caretEl = document.querySelector('#field .caret');
+      const field = document.getElementById('field');
+      const caretEl = field && field.querySelector('.caret');
       const stackBox = document.querySelector('.stack');
       const bar = document.getElementById('bar');
       if (!caretEl || !stackBox || !bar) return;
       const cr = caretEl.getBoundingClientRect();
       const sr = stackBox.getBoundingClientRect();
       const br = bar.getBoundingClientRect();
-      let left = (cr.left - sr.left) - 17;                  // -17 ≈ stack padding (5) + row padding (12) so text lines up with caret
+      const cs = getComputedStyle(field);
+      const partW = sug.partial ? measureText(sug.partial, cs.fontSize + ' ' + cs.fontFamily) : 0;
+      let left = Math.round((cr.left - partW - sr.left) - 17);   // -17 ≈ stack pad (5) + row pad (12) → text lines up with token start
       left = Math.max(8, Math.min(left, sr.width - stk.offsetWidth - 8));
       stk.style.left = left + 'px';
-      stk.style.bottom = (sr.bottom - br.top + 8) + 'px';   // 8px gap above the bar
+      stk.style.bottom = Math.round(sr.bottom - br.top + 8) + 'px';   // 8px gap above the bar
+    }
+
+    // cached canvas text measurement (for token-start anchoring)
+    function measureText(str, font) {
+      const ctx = measureText._c || (measureText._c = document.createElement('canvas').getContext('2d'));
+      ctx.font = font;
+      return ctx.measureText(str).width;
     }
 
     // accept the highlighted option: complete the partial token + a trailing space so the
@@ -2051,6 +2104,14 @@
       update();
     };
     document.getElementById('recentToggle').classList.toggle('on', state.recentOverlay);
+
+    // command-args presentation toggle (list in results vs floating Minecraft stack)
+    document.getElementById('listToggle').onclick = function () {
+      state.argList = !state.argList;
+      this.classList.toggle('on', state.argList);
+      update();
+    };
+    document.getElementById('listToggle').classList.toggle('on', state.argList);
 
     // swipe up on the search bar summons the recent-search overlay (touch + pointer)
     (function () {
