@@ -272,23 +272,36 @@
     }
 
     .recent-peek .list-title {
-      padding-bottom: 6px;
+      padding-bottom: 8px;
     }
 
-    .recent-peek .row {
-      gap: 16px;
-      padding: 13px 0;
+    /* grouped section: gray rounded panel, rows divided by inset hairlines */
+    .recent-peek .cardgroup {
+      background: var(--l1);
+      border-radius: 16px;
+      padding: 0 14px;
+    }
+
+    .recent-peek .cardgroup .row {
+      gap: 13px;
+      padding: 11px 0;
+      border-bottom: 1px solid var(--l2);
+      border-radius: 0;
+    }
+
+    .recent-peek .cardgroup .row:last-child {
+      border-bottom: none;
     }
 
     .recent-peek .row .ricon {
-      width: 48px;
-      height: 48px;
-      flex: 0 0 48px;
-      border-radius: 12px;
+      width: 34px;
+      height: 34px;
+      flex: 0 0 34px;
+      border-radius: 8px;
     }
 
     .recent-peek .row .rtitle {
-      font-size: 19px;
+      font-size: 15px;
     }
 
     /* results region grows; scrolls if needed */
