@@ -917,9 +917,9 @@
           <span class="knob"></span>
           <span class="lbl">Recent overlay</span>
         </div>
-        <div class="toggle" id="listToggle" title="Command args as a list instead of the floating stack">
+        <div class="toggle" id="listToggle" title="Command args as a results list instead of the floating stack">
           <span class="knob"></span>
-          <span class="lbl">List</span>
+          <span class="lbl">codeargs overlay</span>
         </div>
       </div>
 
@@ -1351,9 +1351,11 @@
         state.ghost = computeGhost(p, raw);
       }
 
-      // scoped command → positional argument suggestions (stack above the caret + ghost)
+      // scoped command → positional argument suggestions (stack above the caret + ghost).
+      // suppressed while the recent overlay is up, so recall comes first; args only appear
+      // once a recent entry is committed into the bar.
       state._argSug = null;
-      if (p.mode === 'code') {
+      if (p.mode === 'code' && !state.showRecent) {
         const sug = argSuggest(p.code, raw);
         if (sug) {
           const sig = sug.code + '|' + sug.completed.join(' ') + '|' + sug.options.join(',');
