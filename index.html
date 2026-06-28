@@ -265,13 +265,30 @@
       color: var(--txt-faint);
     }
 
-    /* neutral-state Recent peek (under the pinned apps) */
+    /* neutral-state Recent activity (under the pinned apps) — styled per the reference image:
+       larger rounded app icon + App › action title, hairline separators between rows. */
     .recent-peek {
       margin-top: 34px;
     }
 
     .recent-peek .list-title {
-      padding-bottom: 10px;
+      padding-bottom: 6px;
+    }
+
+    .recent-peek .row {
+      gap: 16px;
+      padding: 13px 0;
+    }
+
+    .recent-peek .row .ricon {
+      width: 48px;
+      height: 48px;
+      flex: 0 0 48px;
+      border-radius: 12px;
+    }
+
+    .recent-peek .row .rtitle {
+      font-size: 19px;
     }
 
     /* results region grows; scrolls if needed */
@@ -304,6 +321,18 @@
     .pinned-wrap {
       padding: 18px 30px 4px;
       flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      touch-action: pan-y;
+      overscroll-behavior: contain;
+      /* fade the bottom edge so the last recent row dissolves toward the keyboard/bar */
+      -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent 100%);
+      mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent 100%);
+    }
+
+    .pinned-wrap::-webkit-scrollbar {
+      width: 0;
     }
 
     .pinned-label {
@@ -1113,9 +1142,9 @@
       argList: false,         // arg options as a results list (on) vs floating stack (off) — top-bar toggle
       _argSug: null,          // current arg suggestions {code, options, partial, completed} or null
       _argSig: null,          // signature of the current option set (resets cmdSel when it changes)
-      recent: [               // history store, most-recent first (seeded for demo)
-        'video', 'airplane', 'balance', 'wifi', '2 + 5',
-        'ter cd ~/downloads', 'files ~/photos', 'terminal', 'set bluetooth', 'maps',
+      recent: [               // recent activity, most-recent first (each resolves to the action performed)
+        'video', 'airplane', 'balance', 'brightness', 'wifi',
+        'volume', 'maps', 'terminal', 'camera', 'files',
       ],
     };
 
@@ -1700,8 +1729,8 @@
       });
     }
 
-    // neutral-state Recent peek — the last 3 searches, resolved to icon + title rows.
-    // A glance only; ↑ promotes it to the full recall overlay (it auto-hides as the bar fills).
+    // neutral-state Recent activity — the recent actions performed, each resolved to an
+    // icon + App › action card. The empty state scrolls, so the whole history is listed.
     function renderRecentPeek() {
       const host = document.getElementById('recentPeek');
       if (!host) return;
@@ -1710,7 +1739,7 @@
       const tl = document.createElement('div'); tl.className = 'list-title'; tl.textContent = 'Recent';
       host.appendChild(tl);
       const grp = document.createElement('div'); grp.className = 'cardgroup';
-      state.recent.slice(0, 3).forEach(q => {
+      state.recent.forEach(q => {
         const r = (resolve(parseInput(q)).filter(Boolean))[0];
         if (!r) return;
         const row = document.createElement('div'); row.className = 'row';
