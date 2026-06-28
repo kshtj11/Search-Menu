@@ -32,6 +32,7 @@ answers → app tiles (fuzzy) → action cards → general-search routes (Search
 
 ## Render
 - **Pinned** (empty): 64px tiles, grayed TUI code under name
+- **Recent peek** (empty, under pinned): last 3 searches resolved to icon + `App › action` rows (a glance; tap re-runs). ↑ promotes it to the full recall overlay/list, which auto-hides the peek as the newest entry fills the bar. Recents stay out of typed-search ranking, so search order is never affected.
 - **App matches**: horizontally-swipeable 64px tile row (~4.25 visible = "more" cue)
 - **Cards**: grouped list w/ hairline separators, icon + name
 - **Answer**: grey-framed accent row (math/peek)

@@ -265,6 +265,15 @@
       color: var(--txt-faint);
     }
 
+    /* neutral-state Recent peek (under the pinned apps) */
+    .recent-peek {
+      margin-top: 34px;
+    }
+
+    .recent-peek .list-title {
+      padding-bottom: 10px;
+    }
+
     /* results region grows; scrolls if needed */
     /* 30px side gutter: app tiles, card icons & query text all line up here */
     .results {
@@ -927,6 +936,7 @@
         <!-- empty-state pinned -->
         <div class="pinned-wrap" id="pinnedWrap">
           <div class="pinned-row" id="pinnedRow"></div>
+          <div class="recent-peek" id="recentPeek"></div>
         </div>
 
         <!-- typing-state results -->
@@ -1069,7 +1079,9 @@
       { id: 'set-wifi', app: 'Settings', appId: 'settings', accent: ACCENTS.settings, label: 'Settings › wifi', icon: 'set' },
       { id: 'set-bri', app: 'Settings', appId: 'settings', accent: ACCENTS.settings, label: 'Settings › brightness', icon: 'set' },
       { id: 'cam-vid', app: 'Camera', appId: 'camera', accent: ACCENTS.camera, label: 'Camera › video', icon: 'cam' },
+      { id: 'set-air', app: 'Settings', appId: 'settings', accent: ACCENTS.settings, label: 'Settings › airplane', icon: 'set' },
       { id: 'snd-vol', app: 'Music', appId: 'audio', accent: ACCENTS.audio, label: 'Music › volume', icon: 'mus' },
+      { id: 'snd-bal', app: 'Music', appId: 'audio', accent: ACCENTS.audio, label: 'Music › balance', icon: 'mus' },
     ];
 
     // §Config — pinned apps (4); #1 is implicit Enter target on empty
@@ -1102,8 +1114,8 @@
       _argSug: null,          // current arg suggestions {code, options, partial, completed} or null
       _argSig: null,          // signature of the current option set (resets cmdSel when it changes)
       recent: [               // history store, most-recent first (seeded for demo)
-        'ter cd ~/downloads', 'wifi', '2 + 5', 'camera', 'snd vol 60',
-        'brightness 40', 'files ~/photos', 'terminal', 'set bluetooth', 'maps',
+        'video', 'airplane', 'balance', 'wifi', '2 + 5',
+        'ter cd ~/downloads', 'files ~/photos', 'terminal', 'set bluetooth', 'maps',
       ],
     };
 
@@ -1491,6 +1503,7 @@
         pinned.style.display = 'block';
         results.style.display = 'none';
         renderPinned();
+        renderRecentPeek();
         return;
       }
 
@@ -1685,6 +1698,32 @@
         if (code) { const c = document.createElement('div'); c.className = 'gcode'; c.textContent = code; el.appendChild(c); }
         row.appendChild(el);
       });
+    }
+
+    // neutral-state Recent peek — the last 3 searches, resolved to icon + title rows.
+    // A glance only; ↑ promotes it to the full recall overlay (it auto-hides as the bar fills).
+    function renderRecentPeek() {
+      const host = document.getElementById('recentPeek');
+      if (!host) return;
+      host.innerHTML = '';
+      if (!state.recent.length) return;
+      const tl = document.createElement('div'); tl.className = 'list-title'; tl.textContent = 'Recent';
+      host.appendChild(tl);
+      const grp = document.createElement('div'); grp.className = 'cardgroup';
+      state.recent.slice(0, 3).forEach(q => {
+        const r = (resolve(parseInput(q)).filter(Boolean))[0];
+        if (!r) return;
+        const row = document.createElement('div'); row.className = 'row';
+        const ic = document.createElement('div'); ic.className = 'ricon';
+        setIcon(ic, r.iconImg, r.icon, r.accent);
+        row.appendChild(ic);
+        const body = document.createElement('div'); body.className = 'rbody';
+        const t = document.createElement('div'); t.className = 'rtitle'; t.textContent = r.title;
+        body.appendChild(t); row.appendChild(body);
+        row.onclick = () => setQuery(q);          // tap re-runs the recent search
+        grp.appendChild(row);
+      });
+      host.appendChild(grp);
     }
 
     // ↑ recall — recent searches, reversed: most recent at the bottom (by the bar),
