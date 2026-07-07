@@ -21,11 +21,14 @@ Input string → **parseInput** → **resolve** (ranked) → **render**. All beh
 3. `#searchSurface` — the search UI (topbar, results, chips, bar, keyboard, app overlay, toast)
 
 ## Input modes (parseInput)
-- **empty** → pinned grid
-- **peek** `?` alone → full system panel (bat/net/cpu/ram/dsk/upt/ip/os as a clean icon-less list); `?bat|net|ram…` → single live readout
+- **empty** → pinned grid + Recent searches; bar shows a tappable `/` square (opens the code picker)
+- **slash** `/` + partial → **code picker overlay** (270px window of colour-coded code cards above the bar; ↑↓/Tab/tap/Enter to pick, or keep typing)
+- **code** `/t`·`/f`·`/s`·`/m`·`/x` → scoped command mode (positional arg stack + Enter to run)
+- **peek** `/?` (or bare `?`) → full system panel (bat/net/cpu/ram/dsk/upt/ip/os); `?bat…` → single readout
 - **math** `=`/operators → inline answer (tap to copy) + Calculator tile + routes
-- **code** leading `ter/fil/set/mod/mus` → scoped command mode (positional arg stack + Enter to run)
 - **plain** → fuzzy apps → actions → web/Files routes (≥3 chars before any check runs)
+
+Codes: `/t` Terminal · `/f` Files · `/s` Settings · `/m` Music · `/x` Modules · `/?` System info. Trigger is the `/` key (replaces `,` on the on-screen keyboard).
 
 ## Resolve hierarchy (ranked Result[])
 answers → app tiles (fuzzy) → action cards → general-search routes (Search + Files). `fuzzy()` scores prefix(3) > substring(2) > subsequence(1).

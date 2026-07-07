@@ -251,6 +251,69 @@
       color: #c8c8c8;
     }
 
+    /* ---------- slash-code picker overlay ---------- */
+    .code-ov {
+      position: absolute;
+      left: 30px;
+      bottom: 84px;
+      /* just above the bar */
+      width: 270px;
+      max-height: 264px;
+      /* ~5.5 cards, scrolls beyond */
+      overflow-y: auto;
+      z-index: 7;
+      background: #1c1c1c;
+      border-radius: 16px;
+      padding: 6px;
+      box-shadow: 0 18px 44px rgba(0, 0, 0, .65);
+    }
+
+    .code-ov.hidden {
+      display: none;
+    }
+
+    .code-ov::-webkit-scrollbar {
+      width: 0;
+    }
+
+    .code-card {
+      height: 48px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 12px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 16px;
+    }
+
+    .code-card.sel {
+      background: #2e2e2e;
+    }
+
+    .code-card .code-token {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 600;
+      min-width: 30px;
+    }
+
+    .code-card .code-appname {
+      color: var(--txt);
+    }
+
+    /* empty-state "/" square in the bar — taps to open the code picker */
+    .sicon.slash {
+      width: 26px;
+      height: 26px;
+      border-radius: 8px;
+      background: var(--l2);
+      color: var(--txt-dim);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
     /* list-mode arg options — icon-less rows in the results list */
     .arg-listrow {
       padding-left: 4px;
@@ -1016,6 +1079,9 @@
 
         <!-- Minecraft-style positional argument stack (anchored above the caret in code mode) -->
         <div id="argStack" class="arg-stack hidden"></div>
+
+        <!-- slash-code picker (list of all codes, floats above the bar) -->
+        <div id="codeList" class="code-ov hidden"></div>
       </div>
 
       <!-- on-screen keyboard -->
@@ -1060,71 +1126,78 @@
       app: 'open', action: 'open', code: 'run',
       web: 'search web', filesroute: 'search in Files',
     };
-    // §6 system codes
+    // §6 slash codes — a leading "/" scopes the search to a command. Keyed by the single
+    // letter after the slash: /t /f /s /m /x , plus /? for the system panel.
     const CODES = {
-      ter: {
+      t: {
         app: 'Terminal', appId: 'terminal', accent: ACCENTS.terminal,
         args: ['cd', 'ls', 'pwd', 'cd ~/downloads']
       },
-      fil: {
+      f: {
         app: 'Files', appId: 'files', accent: ACCENTS.files,
         args: ['~/downloads', '~/dl/*.png', 'recent', '~/photos']
       },
-      set: {
+      s: {
         app: 'Settings', appId: 'settings', accent: ACCENTS.settings,
         args: ['wifi off', 'bright 40', 'bluetooth', 'airplane on']
       },
-      mod: {
+      x: {
         app: 'Modules', appId: 'modules', accent: ACCENTS.modules,
         args: ['gamepad', 'keyboard', 'lidar', 'thermal']
       },
-      mus: {
+      m: {
         app: 'Music', appId: 'audio', accent: ACCENTS.audio,
         args: ['vol 60', 'mute', 'output', 'balance']
       },
     };
 
+    // the slash-code picker menu (overlay list): each command + the system panel.
+    const CODE_MENU = [
+      ...Object.entries(CODES).map(([c, v]) => ({ code: c, app: v.app, accent: v.accent })),
+      { code: '?', app: 'System info', accent: '#9bd0ff' },
+    ];
+
     // positional argument grammar (Minecraft-command style): for each code, `_` is the
     // first-position option set; each value key maps to the NEXT position's options for
     // that value. The suggestion stack walks this tree one argument at a time.
     const ARG_TREE = {
-      ter: {
+      t: {
         _: ['cd', 'ls', 'pwd', 'cat', 'clear'],
         cd: ['~/', '~/downloads', '~/photos', '..'],
         ls: ['-l', '-a', '~/'],
         cat: ['notes.md', 'log.txt'],
       },
-      fil: {
+      f: {
         _: ['~/downloads', '~/photos', 'recent', 'trash', '*.png'],
       },
-      set: {
+      s: {
         _: ['wifi', 'brightness', 'bluetooth', 'airplane'],
         wifi: ['off', 'on'], bluetooth: ['off', 'on'], airplane: ['off', 'on'],
         brightness: ['10', '40', '70', '100'],
       },
-      mod: {
+      x: {
         _: ['gamepad', 'keyboard', 'lidar', 'thermal'],
         gamepad: ['connect', 'disconnect'], keyboard: ['connect', 'disconnect'],
         lidar: ['on', 'off'], thermal: ['on', 'off'],
       },
-      mus: {
+      m: {
         _: ['play', 'pause', 'next', 'prev', 'vol', 'shuffle'],
         vol: ['0', '30', '60', '100'], shuffle: ['on', 'off'],
       },
     };
 
-    // reverse map: app id → its TUI code (for the grayed code shown under tiles)
+    // reverse map: app id → its slash code letter (for the grayed "/t" shown under tiles)
     const CODE_BY_APP = Object.fromEntries(Object.entries(CODES).map(([c, v]) => [v.appId, c]));
 
     // searchable app registry (fuzzy-matched, launcher mode)
     const APPS = [
       { id: 'camera', label: 'Camera', accent: ACCENTS.camera, sub: 'photo · video' },
-      { id: 'terminal', label: 'Terminal', accent: ACCENTS.terminal, sub: 'shell · code ter' },
-      { id: 'files', label: 'Files', accent: ACCENTS.files, sub: 'explorer · code fil' },
-      { id: 'settings', label: 'Settings', accent: ACCENTS.settings, sub: 'system · code set' },
+      { id: 'terminal', label: 'Terminal', accent: ACCENTS.terminal, sub: 'shell · /t' },
+      { id: 'files', label: 'Files', accent: ACCENTS.files, sub: 'explorer · /f' },
+      { id: 'settings', label: 'Settings', accent: ACCENTS.settings, sub: 'system · /s' },
       { id: 'calc', label: 'Calculator', accent: ACCENTS.calc, sub: 'math' },
-      { id: 'modules', label: 'Modules', accent: ACCENTS.modules, sub: 'hot-swap · code mod' },
-      { id: 'audio', label: 'Music', accent: ACCENTS.audio, sub: 'sound · code mus' },
+      { id: 'modules', label: 'Modules', accent: ACCENTS.modules, sub: 'hot-swap · /x' },
+      { id: 'audio', label: 'Music', accent: ACCENTS.audio, sub: 'sound · /m' },
       { id: 'maps', label: 'Maps', accent: '#86d07a', sub: 'navigation' },
       { id: 'camera2', label: 'Camera Roll', accent: ACCENTS.camera, sub: 'gallery' },
       { id: 'notes', label: 'Notes', accent: '#dfe4ea', sub: 'jot · markdown' },
@@ -1169,9 +1242,9 @@
       argList: false,         // arg options as a results list (on) vs floating stack (off) — top-bar toggle
       _argSug: null,          // current arg suggestions {code, options, partial, completed} or null
       _argSig: null,          // signature of the current option set (resets cmdSel when it changes)
-      recent: [               // recent search queries, most-recent first (raw text, incl. code ones)
-        'set wifi off', 'ter cd ~/downloads', '2 + 5', 'fil ~/photos', 'mus vol 60',
-        'wifi', 'brightness 40', 'set bluetooth', 'maps', 'camera',
+      recent: [               // recent search queries, most-recent first (raw text, incl. slash-code ones)
+        '/s wifi off', '/t cd ~/downloads', '2 + 5', '/f ~/photos', '/m vol 60',
+        'wifi', 'brightness 40', '/s bluetooth', 'maps', 'camera',
       ],
     };
 
@@ -1183,7 +1256,20 @@
       const trimmed = str.trim();
       if (trimmed === '') return { mode: 'empty', query: '' };
 
-      // 1. inline operators
+      // 1. slash command system — "/" scopes to a code
+      if (trimmed.startsWith('/')) {
+        const body = trimmed.slice(1);
+        const first = body.split(/\s+/)[0].toLowerCase();
+        if (first[0] === '?')                       // /? → system panel
+          return { mode: 'peek', query: body.slice(1).trim(), raw };
+        if (CODES[first]) {                          // /t, /f, /s, /m, /x → scoped command
+          const rest = body.slice(first.length).trimStart();
+          return { mode: 'code', code: first, query: rest, args: rest.length ? rest.split(/\s+/) : [], raw };
+        }
+        return { mode: 'slash', query: first, raw };  // "/" + partial → the code picker
+      }
+
+      // 2. inline operators
       if (trimmed.startsWith('?'))
         return { mode: 'peek', query: trimmed.slice(1).trim(), raw };
 
@@ -1191,16 +1277,6 @@
       const hasOp = /[+\-*/]/.test(trimmed.replace(/^=/, ''));
       if ((trimmed.startsWith('=') || hasOp) && mathOnly)
         return { mode: 'math', expr: trimmed.replace(/^=/, '').trim(), query: trimmed, raw };
-
-      // 2. exact code match  (leading word)
-      const firstWord = trimmed.split(/\s+/)[0].toLowerCase();
-      if (CODES[firstWord]) {
-        const rest = trimmed.slice(firstWord.length).trimStart();
-        return {
-          mode: 'code', code: firstWord, query: rest,
-          args: rest.length ? rest.split(/\s+/) : [], raw
-        };
-      }
 
       // 3+ plain query (launcher / action / file / web)
       return { mode: 'plain', query: trimmed, raw };
@@ -1220,6 +1296,8 @@
 
     function resolve(p) {
       const out = [];
+
+      if (p.mode === 'slash') return out;   // the code picker overlay handles this mode
 
       if (p.mode === 'math') {
         let val;
@@ -1263,7 +1341,7 @@
         out.push({
           type: 'code', icon: p.code, iconImg: ICONS[c.appId], accent: c.accent,
           title: c.app + (p.query ? ' · ' + p.query : ' (scoped)'),
-          sub: p.query ? 'run: ' + p.code + ' ' + p.query : 'type args, Enter to run',
+          sub: p.query ? 'run: /' + p.code + ' ' + p.query : 'type args, Enter to run',
           action: () => runCode(p.code, p.query),
         });
         // show the underlying app too
@@ -1322,7 +1400,7 @@
         const c = CODES[p.code];
         return c.args.slice(0, 3).map(arg => ({
           label: arg,
-          apply: () => setQuery(p.code + ' ' + arg)
+          apply: () => setQuery('/' + p.code + ' ' + arg)
         }));
       }
       if (p.mode === 'math') {
@@ -1349,13 +1427,7 @@
        ===================================================================== */
     function computeGhost(p, raw) {
       if (p.mode !== 'plain' || !raw) return '';
-      // 1) code-token completion (single leading word: te -> ter)
-      const word = raw.trim().split(/\s+/)[0].toLowerCase();
-      if (raw.trim() === word) {
-        const match = Object.keys(CODES).find(c => c.startsWith(word) && c !== word);
-        if (match) return match.slice(word.length);
-      }
-      // 2) terminal-style history autosuggest from recent searches
+      // terminal-style history autosuggest from recent searches
       const hist = state.recent.find(h =>
         h.toLowerCase().startsWith(raw.toLowerCase()) && h.length > raw.length);
       if (hist) return hist.slice(raw.length);
@@ -1435,7 +1507,14 @@
         } else { state._argSig = null; }
       }
 
-      const selCount = state.showRecent ? state.recent.length : state.results.length;
+      // slash code picker — the filtered list of codes shown in the overlay
+      state._codeList = (p.mode === 'slash') ? codeMenuFiltered(p.query) : null;
+      if (state._codeList) {
+        if (state.selectedIndex >= state._codeList.length) state.selectedIndex = 0;
+      }
+
+      const selCount = state.showRecent ? state.recent.length
+        : state._codeList ? state._codeList.length : state.results.length;
       if (state.selectedIndex >= selCount) state.selectedIndex = 0;
       if (state.selectedIndex < 0) state.selectedIndex = 0;
 
@@ -1445,6 +1524,7 @@
       renderSearchIcon(p);
       renderRecentOverlay();
       renderArgStack();       // caret-anchored after renderBar drew the caret
+      renderCodeList();       // slash-code picker overlay
 
       // when the typed text changes, jump the list back to the top (recall self-scrolls)
       if (!state.showRecent && state._lastQ !== raw) {
@@ -1529,15 +1609,23 @@
       if (p.mode === 'code') {                 // scoped app/code icon
         ic.style.display = 'flex';
         ic.className = 'sicon app';
+        ic.style.background = 'transparent'; ic.onclick = null;
         const img = ICONS[state.tokenCode.appId];
-        if (img) { ic.style.background = 'transparent'; setIcon(ic, img, p.code, '#fff'); }
-        else { ic.style.background = state.tokenCode.accent; ic.textContent = p.code; }
+        if (img) { setIcon(ic, img, '/' + p.code, '#fff'); }
+        else { ic.style.background = state.tokenCode.accent; ic.textContent = '/' + p.code; }
         return;
       }
-      // plain search: a leading icon only for web (magnifier) and Files routes.
-      // launching an app shows no icon — the "name — open" hint already says it.
-      ic.style.display = 'none';             // plain search: the "— action" hint is enough, no leading icon
-      ic.innerHTML = '';
+      if (p.mode === 'empty') {                // slash-command launcher: tap the square to open the picker
+        ic.style.display = 'flex';
+        ic.className = 'sicon slash';
+        ic.style.background = '';
+        ic.innerHTML = ''; ic.textContent = '/';
+        ic.onclick = () => setQuery('/');
+        return;
+      }
+      // plain / peek / math: no leading icon (the "— action" hint is enough)
+      ic.style.display = 'none';
+      ic.innerHTML = ''; ic.onclick = null;
     }
 
     /* =====================================================================
@@ -1752,7 +1840,7 @@
         const lab = document.createElement('div'); lab.className = 'plabel'; lab.textContent = pn.label;
         el.appendChild(tile); el.appendChild(lab);
         const code = CODE_BY_APP[pn.id];
-        if (code) { const c = document.createElement('div'); c.className = 'gcode'; c.textContent = code; el.appendChild(c); }
+        if (code) { const c = document.createElement('div'); c.className = 'gcode'; c.textContent = '/' + code; el.appendChild(c); }
         row.appendChild(el);
       });
     }
@@ -1881,7 +1969,7 @@
     function acceptArg() {
       const sug = state._argSug; if (!sug) return;
       const opt = sug.options[state.cmdSel] || sug.options[0];
-      let q = sug.code;
+      let q = '/' + sug.code;
       if (sug.completed.length) q += ' ' + sug.completed.join(' ');
       q += ' ' + opt + ' ';
       state.query = q; state.cursorPos = q.length;
@@ -1894,6 +1982,43 @@
       const n = state._argSug ? state._argSug.options.length : 0; if (!n) return;
       state.cmdSel = (state.cmdSel + d + n) % n;
       update();
+    }
+
+    // slash-code picker: filter the code menu by the letters typed after "/"
+    function codeMenuFiltered(q) {
+      q = (q || '').toLowerCase();
+      if (!q) return CODE_MENU;
+      return CODE_MENU.filter(c => c.code.startsWith(q) || c.app.toLowerCase().startsWith(q));
+    }
+
+    // slash-code picker overlay — a 270px-wide window of colour-coded code cards above the
+    // bar, filtered live. Tap a card (or Enter) to drop into that code.
+    function renderCodeList() {
+      const ov = document.getElementById('codeList');
+      if (!ov) return;
+      const list = state._codeList;
+      if (!list) { ov.className = 'code-ov hidden'; ov.innerHTML = ''; return; }
+      ov.className = 'code-ov';
+      ov.innerHTML = '';
+      let selEl = null;
+      list.forEach((c, i) => {
+        const card = document.createElement('div');
+        card.className = 'code-card' + (i === state.selectedIndex ? ' sel' : '');
+        const tok = document.createElement('span'); tok.className = 'code-token';
+        tok.textContent = '/' + c.code; tok.style.color = c.accent;
+        const name = document.createElement('span'); name.className = 'code-appname'; name.textContent = c.app;
+        card.appendChild(tok); card.appendChild(name);
+        card.onclick = () => selectCode(c);
+        ov.appendChild(card);
+        if (i === state.selectedIndex) selEl = card;
+      });
+      if (selEl) requestAnimationFrame(() => selEl.scrollIntoView({ block: 'nearest' }));
+    }
+
+    // enter the chosen code — scoped command mode (trailing space starts the arg menu), or
+    // the system panel for /?
+    function selectCode(c) {
+      setQuery(c.code === '?' ? '/?' : '/' + c.code + ' ');
     }
 
     function renderChips() {
@@ -1912,6 +2037,11 @@
        KEY HANDLING  (§2) — source-agnostic
        ===================================================================== */
     function moveSelection(d) {
+      if (state._codeList) {                   // slash code picker
+        const n = state._codeList.length; if (!n) return;
+        state.selectedIndex = (state.selectedIndex + d + n) % n;
+        update(); return;
+      }
       if (state.showRecent) {                  // recall list is reversed: ↑ = older (+1)
         const n = state.recent.length; if (!n) return;
         state.selectedIndex = Math.max(0, Math.min(n - 1, state.selectedIndex - d));
@@ -1938,6 +2068,11 @@
         state.showRecent = false; state.selectedIndex = 0; update();
       }
       const p = parseInput(state.query);
+      if (p.mode === 'slash') {                   // pick the highlighted code from the picker
+        const c = (state._codeList || [])[state.selectedIndex] || (state._codeList || [])[0];
+        if (c) selectCode(c);
+        return;
+      }
       if (p.mode === 'empty') {                   // launch the selected pinned app, or re-run a recent
         const sel = state.neutralSel || 0;
         if (sel < PINNED.length) { const pn = PINNED[sel]; launchApp(pn.id, pn.label); }
@@ -2008,7 +2143,7 @@
         else moveCursor(1);
         e.preventDefault();
       }
-      else if (e.key === 'Escape') { closeRecent(); e.preventDefault(); }
+      else if (e.key === 'Escape') { if (state._codeList) setQuery(''); else closeRecent(); e.preventDefault(); }
       else if (e.key === 'Backspace') { backspace(); e.preventDefault(); }
       else if (e.key.length === 1 && !e.metaKey && !e.ctrlKey) { typeChar(e.key); e.preventDefault(); }
     });
@@ -2023,7 +2158,7 @@
 
     function runCode(code, query) {
       const c = CODES[code];
-      if (code === 'ter') {
+      if (code === 't') {
         toast('Terminal: ran `' + query + '`');
         setTimeout(() => openTerminal(query), 250);
         return;
@@ -2111,7 +2246,7 @@
         { icon: 'back', w: 89, bg: '#474747', onTap: backspace }],
         [{ label: '?123', w: 72, bg: '#2D2D2D', fs: 20 },
         { label: 'Fn', w: 48, bg: '#2D2D2D', fs: 18, fw: 500 },
-        { label: ',', w: 48, bg: '#2D2D2D', fs: 28, onTap: () => typeChar(',') },
+        { label: '/', w: 48, bg: '#2D2D2D', fs: 28, onTap: () => typeChar('/') },
         { label: '', w: 230, bg: '#474747', space: true },
         { label: '.', w: 52, bg: '#2D2D2D', fs: 18, fw: 500, onTap: () => typeChar('.') },
         { icon: 'enter', w: 78, bg: '#636363', onTap: doEnter }],
