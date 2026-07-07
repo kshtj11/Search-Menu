@@ -38,7 +38,8 @@ answers → app tiles (fuzzy) → action cards → general-search routes (Search
 - **Recent searches** (empty, under pinned): the raw query strings (incl. code ones like `set wifi off`, `ter cd ~/downloads`) as plain monospace text — no icons — in a grouped gray section (`l1`, 16px radius, inset hairline dividers); sentence-case "Recent searches" title. Same text the recall overlay shows. The empty state scrolls (`.pinned-wrap` overflow-y, bottom mask); tap re-runs. ↑ hides the section and opens the recall overlay. Recents stay out of typed-search ranking, so search order is never affected.
 - **App matches**: horizontally-swipeable 64px tile row (~4.25 visible = "more" cue)
 - **Cards**: grouped list w/ hairline separators, icon + name
-- **Answer**: grey-framed accent row (math/peek)
+- **Calc card** (math): full-width `l1` card — expression dim on top, big `= result`, copy glyph right; tap anywhere copies. Below it, only two tiles: Calculator + Search (no Files). Matches Figma `683:176`.
+- **Answer**: grey-framed accent row (peek)
 - **Routes**: query text + Search/Files tiles
 - **Action hints** (≥3 chars): grey autocomplete tail per route — `app — open`, `… — search in files`, `… — search web` (icon-less; leading icon only in code mode)
 - **Recent recall** (toggle): solid floating overlay window (`#1c1c1c`, shadow, ~3.5 rows) anchored above the bar; older queries fade via a fixed gradient text-layer (`.rov-fade`), selected row crisp. Off → bottom-anchored full reversed-history list.

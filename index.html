@@ -261,6 +261,11 @@
       max-height: 264px;
       /* ~5.5 cards, scrolls beyond */
       overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      /* momentum */
+      touch-action: pan-y;
+      /* let touch drags scroll the list */
+      overscroll-behavior: contain;
       z-index: 7;
       background: #1c1c1c;
       border-radius: 16px;
@@ -299,6 +304,54 @@
 
     .code-card .code-appname {
       color: var(--txt);
+    }
+
+    /* ---------- calculator answer card (math mode) ---------- */
+    .calc-card {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: var(--l1);
+      border-radius: 14px;
+      padding: 14px 18px;
+      cursor: pointer;
+    }
+
+    .calc-card:active {
+      background: var(--l2);
+    }
+
+    .calc-body {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .calc-expr {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      color: var(--txt-faint);
+      margin-bottom: 3px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .calc-res {
+      font-size: 30px;
+      font-weight: 500;
+      color: #fff;
+      line-height: 1.1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .calc-copy {
+      flex: 0 0 auto;
+      color: var(--txt-dim);
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
 
     /* empty-state "/" square in the bar — taps to open the code picker */
@@ -1304,13 +1357,13 @@
         try { val = Function('"use strict";return (' + p.expr + ')')(); } catch (e) { val = null; }
         if (val !== null && val !== undefined && !Number.isNaN(val)) {
           out.push({
-            type: 'answer', icon: '=', accent: ACCENTS.calc, title: '= ' + val,
+            type: 'answer', icon: '=', accent: ACCENTS.calc, title: '= ' + val, expr: p.expr, val: val,
             sub: null, action: () => { copy(String(val)); toast('Copied ' + val); }
           });
         }
-        // §4: regular results STILL appear below — Calculator app tile + search routes
+        // §4: below the answer, just two options — Calculator + Search (no Files in calc mode)
         out.push(appResult(APPS.find(a => a.id === 'calc')));
-        routeResults(p.query).forEach(r => out.push(r));
+        out.push(routeResults(p.query)[0]);   // Search (web) only
         return out;
       }
 
@@ -1708,6 +1761,30 @@
         const grp = document.createElement('div'); grp.className = 'cardgroup';
         state.results.forEach((r, i) => grp.appendChild(mkRow(r, i, false)));
         results.appendChild(grp);
+        return;
+      }
+
+      // math → the calc answer card (expression on top, big result, copy on tap) + two tiles
+      if (p.mode === 'math') {
+        const ans = state.results.find(r => r.type === 'answer');
+        if (ans) {
+          const card = document.createElement('div'); card.className = 'calc-card';
+          const body = document.createElement('div'); body.className = 'calc-body';
+          const ex = document.createElement('div'); ex.className = 'calc-expr'; ex.textContent = ans.expr;
+          const rs = document.createElement('div'); rs.className = 'calc-res'; rs.textContent = ans.title;
+          body.appendChild(ex); body.appendChild(rs);
+          const cp = document.createElement('div'); cp.className = 'calc-copy';
+          cp.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
+          card.appendChild(body); card.appendChild(cp);
+          card.onclick = () => ans.action();          // tap the card copies the result
+          results.appendChild(card);
+        }
+        const tiles = state.results.filter(r => r.type === 'app' || r.type === 'web');
+        if (tiles.length) {
+          const row = document.createElement('div'); row.className = 'tilerow';
+          tiles.forEach(r => row.appendChild(mkTile(r, state.results.indexOf(r))));
+          results.appendChild(row);
+        }
         return;
       }
 
