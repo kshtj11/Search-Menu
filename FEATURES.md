@@ -43,7 +43,7 @@ answers → app tiles (fuzzy) → action cards → general-search routes (Search
 - **Routes**: query text + Search/Files tiles
 - **Action hints** (≥3 chars): grey autocomplete tail per route — `app — open`, `… — search in files`, `… — search web` (icon-less; leading icon only in code mode)
 - **Recent recall** (toggle): solid floating overlay window (`#1c1c1c`, shadow, ~3.5 rows) anchored above the bar; older queries fade via a fixed gradient text-layer (`.rov-fade`), selected row crisp. Off → bottom-anchored full reversed-history list.
-- **Command args** (Minecraft-style): in code mode an `ARG_TREE` grammar drives positional suggestions one argument at a time (`set ` → wifi/brightness/bluetooth/airplane → `set wifi ` → off/on). Highlighted option = grey bar ghost; typed prefix dims in the stack. Tab / → / tap accept and advance; ↑↓ cycle; Enter runs. Floating stack anchors to the current token's start (stable while typing). Suppressed while the recent overlay is up (recall first; args appear only after a recent entry is committed). **codeargs overlay toggle** → render the same options as icon-less rows in the results list instead of the floating stack.
+- **Command args** (Minecraft-style, gated by the **code-overlay** toggle — off by default): when ON, code mode drives an `ARG_TREE` positional-suggestion floating stack one argument at a time (`/s ` → wifi/brightness/bluetooth/airplane → `/s wifi ` → off/on). Highlighted option = grey bar ghost; typed prefix dims. Tab / → / tap accept and advance; ↑↓ cycle; Enter runs. Stack anchors to the current token's start (stable while typing), scale-aware. Suppressed while the recent overlay is up. OFF → no arg overlay/ghost at all.
 - **Results fade**: both edges masked (top 22px, bottom 16px) so swipeable tiles don't clip hard against chips/bar
 - **Bar**: styled code token (accent), caret at `cursorPos`, ghost autosuggest, app icon when scoped; SVG cross = clear-text / close-surface; `min-height:68px`, `border-radius:18px`
 
@@ -64,7 +64,7 @@ answers → app tiles (fuzzy) → action cards → general-search routes (Search
 Terminal (fake shell: cd/ls/pwd), Files (filtered list), toasts for the rest. `‹ back` / Esc closes.
 
 ## Toggles
-On-screen↔Connected KB · Chips on/off · Recent overlay on/off (solid window vs full list) · codeargs overlay on/off (command args as results-list rows vs floating stack).
+On-screen↔Connected KB · Chips on/off · Recent overlay on/off (solid window vs full list) · code-overlay on/off (floating code-arg overlay when typing a code; off by default).
 
 ## Figma documentation (file `H1f7PUCNLbEBou7eK62XQH`, section `667:3`)
 Short description of each board:

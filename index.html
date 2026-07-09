@@ -1098,9 +1098,9 @@
           <span class="knob"></span>
           <span class="lbl">Recent overlay</span>
         </div>
-        <div class="toggle" id="listToggle" title="Command args as a results list instead of the floating stack">
+        <div class="toggle" id="codeOverlayToggle" title="Show the floating code-arg overlay when typing a code">
           <span class="knob"></span>
-          <span class="lbl">codeargs overlay</span>
+          <span class="lbl">code-overlay</span>
         </div>
       </div>
 
@@ -1292,7 +1292,7 @@
       showRecent: false,      // recent-search recall panel (↑ on empty bar)
       recentOverlay: true,    // recall style: floating overlay (on) vs full list (off) — top-bar toggle
       cmdSel: 0,              // highlighted option in the positional argument stack
-      argList: false,         // arg options as a results list (on) vs floating stack (off) — top-bar toggle
+      codeOverlay: false,     // show the floating code-arg overlay when typing a code (top-bar toggle; off by default)
       _argSug: null,          // current arg suggestions {code, options, partial, completed} or null
       _argSig: null,          // signature of the current option set (resets cmdSel when it changes)
       recent: [               // recent search queries, most-recent first (raw text, incl. slash-code ones)
@@ -1548,7 +1548,7 @@
       // suppressed while the recent overlay is up, so recall comes first; args only appear
       // once a recent entry is committed into the bar.
       state._argSug = null;
-      if (p.mode === 'code' && !state.showRecent) {
+      if (p.mode === 'code' && !state.showRecent && state.codeOverlay) {
         const sug = argSuggest(p.code, raw);
         if (sug) {
           const sig = sug.code + '|' + sug.completed.join(' ') + '|' + sug.options.join(',');
@@ -1712,29 +1712,6 @@
       // code mode keeps the simple TUI card list (icon + name + arg subtext),
       // then the web/files routes as a tile block underneath (same as plain strings)
       if (p.mode === 'code') {
-        // list mode: the current position's options render as icon-less rows up top
-        // (same role as the floating stack, just in the results list). cmdSel drives the highlight.
-        if (state.argList && state._argSug) {
-          const sug = state._argSug;
-          const tl = document.createElement('div'); tl.className = 'list-title';
-          tl.textContent = (sug.completed.length ? sug.code + ' ' + sug.completed.join(' ') : sug.code) + ' …';
-          results.appendChild(tl);
-          const og = document.createElement('div'); og.className = 'cardgroup';
-          sug.options.forEach((opt, i) => {
-            const row = document.createElement('div');
-            row.className = 'row arg-listrow' + (i === state.cmdSel ? ' sel' : '');
-            const body = document.createElement('div'); body.className = 'rbody';
-            const t = document.createElement('div'); t.className = 'rtitle';
-            if (sug.partial && opt.toLowerCase().startsWith(sug.partial.toLowerCase())) {
-              const a = document.createElement('span'); a.className = 'arg-pre'; a.textContent = opt.slice(0, sug.partial.length);
-              t.appendChild(a); t.appendChild(document.createTextNode(opt.slice(sug.partial.length)));
-            } else { t.textContent = opt; }
-            body.appendChild(t); row.appendChild(body);
-            row.onclick = () => { state.cmdSel = i; acceptArg(); };
-            og.appendChild(row);
-          });
-          results.appendChild(og);
-        }
         const grp = document.createElement('div'); grp.className = 'cardgroup';
         const routes = [];
         state.results.forEach((r, i) => {
@@ -2000,7 +1977,7 @@
       const stk = document.getElementById('argStack');
       if (!stk) return;
       const sug = state._argSug;
-      if (!sug || state.argList) { stk.className = 'arg-stack hidden'; stk.innerHTML = ''; return; }   // list mode renders in the results instead
+      if (!sug) { stk.className = 'arg-stack hidden'; stk.innerHTML = ''; return; }
       stk.className = 'arg-stack';
       stk.innerHTML = '';
       sug.options.forEach((opt, i) => {
@@ -2424,13 +2401,13 @@
     };
     document.getElementById('recentToggle').classList.toggle('on', state.recentOverlay);
 
-    // command-args presentation toggle (list in results vs floating Minecraft stack)
-    document.getElementById('listToggle').onclick = function () {
-      state.argList = !state.argList;
-      this.classList.toggle('on', state.argList);
+    // code-overlay toggle — on = floating arg overlay when typing a code, off = nothing
+    document.getElementById('codeOverlayToggle').onclick = function () {
+      state.codeOverlay = !state.codeOverlay;
+      this.classList.toggle('on', state.codeOverlay);
       update();
     };
-    document.getElementById('listToggle').classList.toggle('on', state.argList);
+    document.getElementById('codeOverlayToggle').classList.toggle('on', state.codeOverlay);
 
     // swipe up on the search bar summons the recent-search overlay (touch + pointer)
     (function () {
